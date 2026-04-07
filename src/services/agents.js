@@ -4,12 +4,12 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyC0ne3R8uDOWFogzfUkc
 const genAI = new GoogleGenerativeAI(apiKey);
 
 const landmarks = {
-  flood: { lat: 13.0358, lng: 77.5970, zone: "Hebbal" },
+  flood: { lat: 13.0086, lng: 77.6956, zone: "KR Puram" },
   building_collapse: { lat: 12.9698, lng: 77.7499, zone: "Whitefield" },
-  fire: { lat: 12.9784, lng: 77.6408, zone: "Indiranagar" },
-  landslide: { lat: 12.9352, lng: 77.6245, zone: "Koramangala" },
-  earthquake: { lat: 12.9758, lng: 77.6010, zone: "MG Road" },
-  accident: { lat: 12.9172, lng: 77.6229, zone: "Silk Board" },
+  fire: { lat: 12.9591, lng: 77.6974, zone: "Marathahalli" },
+  landslide: { lat: 13.1007, lng: 77.5963, zone: "Yelahanka" },
+  earthquake: { lat: 13.0086, lng: 77.6956, zone: "KR Puram" },
+  accident: { lat: 12.9698, lng: 77.7499, zone: "Whitefield" },
 };
 
 const getGeminiJSON = async (prompt, imageBase64) => {
@@ -221,4 +221,98 @@ export const startAgent4 = (updateDB, destination, severity, originalEta) => {
       pushState(progress, eta_remaining, "enroute", currentLat, currentLng);
     }
   }, 1000);
+};
+
+/**
+ * AI Agent to rank resources in order of arrival impact 
+ * @param {Object} incident - disaster context
+ * @param {Array} resourcesWithMetrics - resources with distance/duration
+ */
+export const rankResourcesByAI = async (incident, resourcesWithMetrics) => {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: { responseMimeType: "application/json" }
+  });
+
+  const prompt = `You are an Emergency Ops Coordinator. 
+Rank queste resources in the optimal order of arrival impact (Priority 1 = Most Critical) for a ${incident.type} in ${incident.zone}.
+Severity is ${incident.severity}. Confidence is ${incident.confidence}%.
+
+Resources dispatched:
+${JSON.stringify(resourcesWithMetrics.map(r => ({ name: r.name, type: r.type, distance: r.distance, duration: r.duration })), null, 2)}
+
+Return ONLY an array of resource names in the sorted order in this JSON format:
+{
+  "sortedOrder": ["Name 1", "Name 2", ...]
+}`;
+
+  try {
+    const result = await model.generateContent([prompt]);
+    const response = await result.response;
+    const data = JSON.parse(response.text());
+    return data.sortedOrder || resourcesWithMetrics.map(r => r.name);
+  } catch (error) {
+    console.error("Agent 4 Rank Error:", error);
+    // fallback to sorting by duration if Gemini fails
+    return resourcesWithMetrics.sort((a, b) => (a.duration || 0) - (b.duration || 0)).map(r => r.name);
+  }
+};
+
+/**
+ * AGENT 5: INTELLIGENT RESOURCE SELECTION
+ * Uses Gemini to evaluate multiple candidates (Overpass + OSR) and pick the best response units
+ */
+export const selectBestResourcesAI = async (incident, resources) => {
+  const type = (incident.disaster_type || "emergency").toLowerCase();
+
+  const prompt = `
+    You are a Disaster Response Dispatch Agent.
+    Incident: ${type.toUpperCase()}
+    Location: ${incident.zone}
+    
+    CATEGORY-SPECIFIC ROLES (PHYSICAL RESPONDERS ONLY):
+    You must select EXACTLY 3 physical centers in these slots for ALL disasters (Fire, Flood, Collapse):
+    
+    - SLOT 1: Primary Fire Station (type: fire_station)
+    - SLOT 2: Police Station (type: police)
+    - SLOT 3: Medical Center (type: hospital)
+       
+    !!! CRITICAL PROHIBITIONS:
+    - NO administrative offices (BBMP, Commissioner, Assistant Commissioner, Registrar).
+    - NO government/corporation offices, electricity offices, or ward offices.
+    - NO specialty clinics (Eye/Dental/Skin/Hair).
+    - Only select nodes that physically respond to emergencies.
+    
+    RULES:
+    1. You MUST select exactly 3 unique centers.
+    2. Match the specific SLOT requirements for the disaster type.
+    3. For hospitals, prioritize those where "has_emergency" is true.
+    4. Primary selection criteria should be distance, but ROLE MATCH is the MOST important.
+    5. Return ONLY a JSON array of the 3 selected resource NAMES.
+    
+    Available Resources:
+    ${JSON.stringify(resources.map(r => ({ name: r.name, type: r.type, dist_km: r.distance, duration_min: r.duration, has_emergency: r.has_emergency || false })), null, 2)}
+    
+    JSON ONLY.
+  `;
+
+  try {
+    const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    
+    const result = await model.generateContent([prompt]);
+    const response = await result.response;
+    const selectedNames = JSON.parse(response.text());
+    
+    // Map back to full resource objects
+    return resources.filter(r => selectedNames.includes(r.name));
+  } catch (error) {
+    console.error("Agent 5 Error:", error);
+    // Role-Aware Deterministic Fallback (Physical Only)
+    const fire = resources.find(r => r.type === "fire_station");
+    const hosp = resources.find(r => r.type === "hospital");
+    const pol = resources.find(r => r.type === "police");
+
+    return [fire, hosp, pol].filter(Boolean);
+  }
 };

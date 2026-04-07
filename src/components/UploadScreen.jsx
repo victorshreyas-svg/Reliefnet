@@ -1,9 +1,9 @@
-import React, { useState, useRef } from "react";
+import React, { useRef } from "react";
 import { UploadCloud, X, Send } from "lucide-react";
 import clsx from "clsx";
+import { runAgent1 } from "../services/agents";
 
-export const UploadScreen = ({ onProcess, isProcessing }) => {
-  const [items, setItems] = useState([]);
+export const UploadScreen = ({ items, setItems, onSubmit, isProcessing }) => {
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
@@ -20,8 +20,43 @@ export const UploadScreen = ({ onProcess, isProcessing }) => {
 
     validFiles.forEach(file => {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setItems(prev => [...prev, { id: Math.random().toString(), file, base64: e.target.result, description: "" }]);
+      reader.onload = async (e) => {
+        const base64 = e.target.result;
+        const tempId = Math.random().toString();
+        
+        // Add item immediately with loading state
+        setItems(prev => [...prev, { 
+          id: tempId, 
+          file, 
+          base64, 
+          fileName: file.name,
+          location: "Analyzing location...",
+          description: "Generating AI classification..."
+        }]);
+
+        try {
+          // Silent Agent 1 call
+          const a1ResultRaw = await runAgent1(base64, "");
+          const aiType = a1ResultRaw.disaster_type;
+          
+          // Generate mock metadata for Case 2
+          const zones = ["Whitefield", "KR Puram", "Yelahanka", "Marathahalli"];
+          const location = zones[Math.floor(Math.random() * zones.length)] + ", Bangalore";
+          
+          let description = "Incident reported. Awaiting further analysis.";
+          if (aiType === "flood") description = "Urban flooding reported. Roads submerged. Traffic disruption observed.";
+          else if (aiType === "fire") description = "Active fire reported in building. Smoke visible. Emergency response required.";
+          else if (["building_collapse", "earthquake", "landslide"].includes(aiType)) description = "Structural collapse detected. Possible casualties. Rescue teams required.";
+          
+          setItems(prev => prev.map(item => 
+            item.id === tempId ? { ...item, location, description } : item
+          ));
+        } catch (error) {
+          console.error("Agent 1 preview error:", error);
+          setItems(prev => prev.map(item => 
+            item.id === tempId ? { ...item, location: "Unknown Location", description: "Manual upload. Pending pipeline analysis." } : item
+          ));
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -32,28 +67,18 @@ export const UploadScreen = ({ onProcess, isProcessing }) => {
     processFiles(Array.from(e.dataTransfer.files));
   };
 
-  const updateDescription = (id, text) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, description: text } : item));
-  };
-
   const removeItem = (id) => {
     setItems(prev => prev.filter(item => item.id !== id));
   };
 
-  const handleSubmit = () => {
-    if (items.length === 0) return;
-    onProcess(items);
-    setItems([]);
-  };
-
   return (
-    <div className="w-full max-w-5xl mx-auto p-6 space-y-8">
+    <div className="w-full max-w-5xl mx-auto p-6 space-y-8 flex-1 overflow-y-auto">
       <div className="text-center space-y-3 mb-10 pt-10">
-        <h1 className="text-5xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 text-transparent bg-clip-text">
-          ReliefNet
-        </h1>
-        <p className="text-lg text-gray-400 font-medium tracking-wide">
-          Real-Time Disaster Resource Allocation System
+        <h2 className="text-4xl font-extrabold tracking-tight text-white">
+          Upload Incident Data
+        </h2>
+        <p className="text-md text-gray-400 font-medium tracking-wide">
+          Submit images to instantly trigger the AI pipeline.
         </p>
       </div>
 
@@ -79,25 +104,27 @@ export const UploadScreen = ({ onProcess, isProcessing }) => {
       </div>
 
       {items.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 duration-500 animate-in fade-in slide-in-from-bottom-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8">
           {items.map((item) => (
-            <div key={item.id} className="group relative bg-gray-800/80 backdrop-blur-sm rounded-2xl overflow-hidden shadow-2xl border border-gray-700 transition hover:border-gray-600">
+            <div key={item.id} className="group relative bg-gray-800/80 backdrop-blur-sm rounded-2xl overflow-hidden shadow-2xl border border-gray-700">
               <button
                 onClick={() => removeItem(item.id)}
-                className="absolute top-3 right-3 p-1.5 focus:outline-none bg-black/50 hover:bg-red-500/80 rounded-full text-white transition-all opacity-0 group-hover:opacity-100"
+                className="absolute top-3 right-3 p-1.5 focus:outline-none bg-black/60 hover:bg-red-500 rounded-full text-white transition-all opacity-0 group-hover:opacity-100 z-10"
               >
                 <X className="w-4 h-4" />
               </button>
-              <img src={item.base64} alt="preview" className="w-full h-48 object-cover" />
-              <div className="p-5">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 block">Context Notes</label>
-                <textarea
-                  className="w-full bg-gray-900/50 border border-gray-700 rounded-xl p-3 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none transition"
-                  placeholder="Add specific details or context..."
-                  rows={2}
-                  value={item.description}
-                  onChange={(e) => updateDescription(item.id, e.target.value)}
-                />
+              <div className="relative h-48 w-full bg-gray-900">
+                <img src={item.base64} alt="preview" className="w-full h-full object-cover" />
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-gray-900/90 to-transparent p-4 text-white">
+                   <p className="text-xs font-bold uppercase tracking-widest text-blue-400 mb-1">Location</p>
+                   <p className="text-sm font-medium truncate">{item.location}</p>
+                </div>
+              </div>
+              <div className="p-5 min-h-[100px]">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 block">AI Description</label>
+                <p className="text-sm text-gray-200 leading-relaxed border-l-2 border-gray-600 pl-3">
+                  {item.description}
+                </p>
               </div>
             </div>
           ))}
@@ -105,18 +132,18 @@ export const UploadScreen = ({ onProcess, isProcessing }) => {
       )}
 
       {items.length > 0 && (
-        <div className="flex justify-end pt-6 border-t border-gray-800">
+        <div className="flex justify-end pt-6 border-t border-gray-800 pb-10">
           <button
             disabled={isProcessing}
-            onClick={handleSubmit}
-            className="group flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-8 py-3.5 rounded-xl font-bold tracking-wide shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5"
+            onClick={onSubmit}
+            className="group flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-4 rounded-xl font-bold tracking-wide shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5"
           >
             {isProcessing ? (
-              <span className="animate-pulse">Pipeline Running...</span>
+              <span className="animate-pulse">Starting Pipeline...</span>
             ) : (
               <>
                 <Send className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                <span>SUBMIT</span>
+                <span>SUBMIT TO PIPELINE</span>
               </>
             )}
           </button>
