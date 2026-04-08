@@ -306,6 +306,7 @@ export const selectBestResourcesAI = async (incident, resources) => {
     RESOURCE DECISION RULES:
     
     If FIRE:
+    - MANDATORY: You MUST select at least 1 Fire Station. Fire stations are the absolute highest priority.
     - Small localized fire -> 1 Fire Unit
     - Building fire -> 1-2 Fire Units
     - Large spreading fire -> 2-3 Fire Units
@@ -333,17 +334,26 @@ export const selectBestResourcesAI = async (incident, resources) => {
     
     MEDICAL ALLOCATION:
     - Minor injuries -> 1 Hospital.
-    - Multiple casualties -> 2 Hospitals (1 primary trauma setup, 1 overflow).
-    - Severe collapse/fire/flood -> Strictly prioritize Multi-Speciality Hospitals, Trauma Centers, General Hospitals, or Emergency Hospitals.
-    - STRICTLY EXCLUDE: Maternity hospitals, Stroke centers, neurology-only centers, eye hospitals, dental clinics, orthopaedic-only clinics, or purely elective/specialty-only medical facilities.
+    - Multiple casualties -> 2 Hospitals (1 primary trauma/burn setup, 1 overflow).
+    - DEFAULT: Strictly prioritize Multispecialty Hospitals, Trauma Centers, Burn Care Units, or Government Emergency Hospitals.
+    - You MUST EXCLUDE: Maternity hospitals, dental hospitals, eye hospitals, specialty clinics, dental centers, or small nursing homes.
 
     !!! CRITICAL PROHIBITIONS (DO NOT SELECT):
-    - NO Government offices, Assistant commissioner, RTO, BESCOM, Registrar, or Corporation offices.
+    - NO maternity hospitals, NO dental hospitals, NO dental clinics, NO nursing homes, NO small clinics.
+    - NO Government administrative offices, Assistant commissioner, RTO, BESCOM, Registrar, or Corporation offices.
     - NO traffic police cabins, police outposts, traffic booths, or checkposts. Only select full Police Stations.
-    - NO small clinics, dental clinics, eye clinics, purely elective hospitals, or small nursing homes.
-    - NEVER select administrative offices.
+    - NO Inspector offices, Excise offices, Tax departments, or Banks.
+    - NEVER select administrative offices for rescue roles.
+    - Rescue units MUST be physical field response units like NDRF, SDRF, Civil Defence, or Disaster Response. 
     - Important: Fire stations inherently include rescue capability. Do not artificially map a separate rescue team unless an NDRF or specific disaster unit is explicitly selected.
     
+    ESTIMATED ARRIVAL PRIORITY (STRICT):
+    - PROXIMITY IS THE ABSOLUTE PRIORITY. You MUST prioritize units with the lowest 'duration_min'.
+    - If a unit is within 5km ('dist_km' < 5), it MUST be selected over a further unit, even if the further unit has a more specialized name (e.g., Trauma Center vs Hospital).
+    - EXCEPTION: If NO local multispecialty hospital is within 5km, then and only then pick a further Trauma Center.
+    - If a resource is more than 12 minutes away and a comparable local resource exists under 5 minutes, you MUST select the closer one.
+    - Urban transit at Yelahanka is slow; strictly avoid any unit over 15 minutes away if a 2-5 minute unit is available.
+
     SECONDARY ALLOWED: BBMP emergency response, Civil defence, Search and rescue team, Ambulance bases.
 
     RULES:
@@ -380,8 +390,36 @@ export const selectBestResourcesAI = async (incident, resources) => {
     logger.emit(`[Resource Agent] Medical teams required: ${r["Medical Units"] || 0}`);
     
     const selectedNames = aiData.selected_resources || [];
-    const matched = resources.filter(r => selectedNames.includes(r.name));
+    let matched = resources.filter(r => selectedNames.includes(r.name));
     
+    // DETERMINISTIC SAFEGUARD: For Fire disasters, ensure at least one Fire Station is selected
+    if (type.includes("fire") && !matched.some(m => m.type === "fire_station")) {
+      const closestFire = resources
+        .filter(r => r.type === "fire_station")
+        .sort((a, b) => (a.duration || a.distance || 0) - (b.duration || b.distance || 0))[0];
+        
+      if (closestFire) {
+        matched = [closestFire, ...matched];
+        logger.emit(`[Resource Agent] Safeguard: Force-allocated ${closestFire.name}`);
+      }
+    }
+
+    // DETERMINISTIC SAFEGUARD: For Flood disasters, ensure a Rescue/NDRF/Fire unit is selected
+    if (type.includes("flood") && !matched.some(m => m.type === "rescue" || m.type === "fire_station")) {
+      const rescuePool = resources.filter(r => r.type === "rescue" || r.type === "fire_station");
+      const closestRescue = rescuePool.sort((a, b) => {
+        // Boost priority for actual NDRF/SDRF teams if available
+        const n = (a.name + b.name).toLowerCase();
+        const aScore = n.includes("ndrf") || n.includes("sdrf") || n.includes("civil") ? -100 : 0;
+        return ((a.duration || a.distance || 0) + aScore) - (b.duration || b.distance || 0);
+      })[0];
+
+      if (closestRescue) {
+        matched = [closestRescue, ...matched];
+        logger.emit(`[Resource Agent] Safeguard: Force-allocated flood rescue unit ${closestRescue.name}`);
+      }
+    }
+
     return {
       requirements: aiData.requirements || { "Fire Units": 1, "Police Units": 1, "Medical Units": 1, "Rescue Units": 0 },
       selected: matched

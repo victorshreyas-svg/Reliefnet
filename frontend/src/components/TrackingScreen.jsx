@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getORSRoute, selectAgentResources } from '../services/rescueFinder';
+import { getORSRoute } from '../services/rescueFinder';
 import { rankResourcesByAI } from '../services/agents';
 import { 
   Activity, 
@@ -68,6 +68,9 @@ export const TrackingScreen = () => {
   const [loading, setLoading] = useState(true);
   const [simulationTime, setSimulationTime] = useState(0);
 
+  const [allArrived, setAllArrived] = useState(false);
+  const [showBanner, setShowBanner] = useState(false);
+
   useEffect(() => {
     if (!incident || !baseResources.length) return;
     const fetchAllData = async () => {
@@ -114,17 +117,29 @@ export const TrackingScreen = () => {
   useEffect(() => {
     if (loading || enrichedResources.length === 0) return;
     const interval = setInterval(() => {
-      setEnrichedResources(prev => prev.map(res => {
-        if (res.progress >= 100) return { ...res, progress: 100, currentEta: 0, status: "ARRIVED" };
-        const step = 100 / (res.duration * 5); 
-        const nextProgress = Math.min(res.progress + step, 100);
-        const nextEta = Math.max(Math.ceil(res.duration * (1 - nextProgress / 100)), 0);
-        return { ...res, progress: nextProgress, currentEta: nextEta, status: nextProgress >= 100 ? "ARRIVED" : "EN_ROUTE" };
-      }));
+      setEnrichedResources(prev => {
+        const next = prev.map(res => {
+          if (res.progress >= 100) return { ...res, progress: 100, currentEta: 0, status: "ARRIVED" };
+          const step = 100 / (res.duration * 5); 
+          const nextProgress = Math.min(res.progress + step, 100);
+          const nextEta = Math.max(Math.ceil(res.duration * (1 - nextProgress / 100)), 0);
+          return { ...res, progress: nextProgress, currentEta: nextEta, status: nextProgress >= 100 ? "ARRIVED" : "EN_ROUTE" };
+        });
+
+        // MISSION COMPLETION DETECTION
+        const allDone = next.length > 0 && next.every(r => r.status === "ARRIVED");
+        if (allDone && !allArrived) {
+          setAllArrived(true);
+          setShowBanner(true);
+          setTimeout(() => setShowBanner(false), 3000);
+        }
+        
+        return next;
+      });
       setSimulationTime(t => t + 1);
     }, 1000);
     return () => clearInterval(interval);
-  }, [loading, enrichedResources.length]);
+  }, [loading, enrichedResources.length, allArrived]);
 
   if (!state || !state.incident) {
     return (
@@ -141,9 +156,9 @@ export const TrackingScreen = () => {
   const incidentIcon = L.divIcon({
     html: `
       <div class="relative flex items-center justify-center">
-        <div class="absolute w-16 h-16 bg-red-500/20 rounded-full animate-ping opacity-30"></div>
-        <div class="relative w-12 h-12 bg-red-600 border-2 border-white rounded-full flex items-center justify-center text-2xl shadow-[0_0_25px_rgba(239,68,68,0.5)]">
-          ${incident.disaster_type?.toLowerCase().includes('fire') ? '🔥' : incident.disaster_type?.toLowerCase().includes('flood') ? '🌊' : '🏢'}
+        <div class="absolute w-16 h-16 ${allArrived ? 'bg-green-500/20' : 'bg-red-500/20'} rounded-full animate-ping opacity-30"></div>
+        <div class="relative w-12 h-12 ${allArrived ? 'bg-green-600 shadow-[0_0_25px_rgba(34,197,94,0.5)]' : 'bg-red-600 shadow-[0_0_25px_rgba(239,68,68,0.5)]'} border-2 border-white rounded-full flex items-center justify-center text-2xl transition-colors duration-1000">
+          ${(!incident.disaster_type || incident.disaster_type === 'pending') ? '🛰️' : incident.disaster_type?.toLowerCase().includes('fire') ? '🔥' : incident.disaster_type?.toLowerCase().includes('flood') ? '🌊' : '🏢'}
         </div>
       </div>
     `,
@@ -160,14 +175,14 @@ export const TrackingScreen = () => {
         <header className="px-6 py-5 border-b border-white/[0.06] bg-[#0B0F17]/80 flex items-center justify-between">
           <div>
             <h2 className="text-[10px] font-black text-[#9CA3AF] uppercase tracking-[0.2em] flex items-center gap-2">
-              <ShieldAlert className="text-[#EF4444] animate-pulse" size={12} />
+              <ShieldAlert className={`${allArrived ? 'text-[#22C55E]' : 'text-[#EF4444]'} animate-pulse`} size={12} />
               Incident Telemetry
             </h2>
             <p className="text-[9px] font-bold text-[#9CA3AF] tracking-tighter opacity-40 uppercase">Satellite Uplink Active</p>
           </div>
-          <div className="flex items-center gap-2 bg-[#EF4444]/10 px-3 py-1 rounded-full border border-[#EF4444]/25">
-             <div className="w-1 h-1 rounded-full bg-[#EF4444] animate-pulse" />
-             <span className="text-[9px] font-black text-[#EF4444] uppercase tracking-tighter">LIVE FEED</span>
+          <div className={`flex items-center gap-2 ${allArrived ? 'bg-[#22C55E]/10 border-[#22C55E]/25' : 'bg-[#EF4444]/10 border-[#EF4444]/25'} px-3 py-1 rounded-full border`}>
+             <div className={`w-1 h-1 rounded-full ${allArrived ? 'bg-[#22C55E]' : 'bg-[#EF4444]'} animate-pulse`} />
+             <span className={`text-[9px] font-black ${allArrived ? 'text-[#22C55E]' : 'text-[#EF4444]'} uppercase tracking-tighter`}>{allArrived ? 'SECURED' : 'LIVE FEED'}</span>
           </div>
         </header>
 
@@ -180,10 +195,10 @@ export const TrackingScreen = () => {
                 <h3 className="text-2xl font-black text-[#E6EDF3] capitalize leading-none tracking-tight group-hover:text-[#00E5FF] transition-colors">{incident.disaster_type?.replace('_', ' ')}</h3>
               </div>
               <div className="text-right">
-                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border tracking-widest ${incident.severity_block?.severity === 'CRITICAL' ? 'bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/30' : 'bg-[#DC2626]/10 text-[#DC2626] border-[#DC2626]/30'}`}>
-                  {incident.severity_block?.severity || 'HIGH'}
+                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border tracking-widest ${allArrived ? 'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/30' : (incident.severity_block?.severity === 'CRITICAL' ? 'bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/30' : 'bg-[#DC2626]/10 text-[#DC2626] border-[#DC2626]/30')}`}>
+                  {allArrived ? 'SECURED' : (incident.severity_block?.severity || 'HIGH')}
                 </div>
-                <p className="text-[8px] text-[#9CA3AF] font-bold mt-1.5 uppercase opacity-40">Severity</p>
+                <p className="text-[8px] text-[#9CA3AF] font-bold mt-1.5 uppercase opacity-40">Status</p>
               </div>
             </div>
 
@@ -203,17 +218,19 @@ export const TrackingScreen = () => {
           {/* Location & Geospatial Card */}
           <div className="p-5 bg-[#0F1623]/20 border border-white/[0.03] rounded-3xl relative group">
             <div className="flex items-center gap-4 mb-4">
-               <div className="w-10 h-10 rounded-2xl bg-[#00E5FF]/10 flex items-center justify-center border border-[#00E5FF]/20 shadow-inner group-hover:scale-105 transition-transform"><MapPin className="text-[#00E5FF]" size={18} /></div>
+               <div className={`w-10 h-10 rounded-2xl ${allArrived ? 'bg-[#22C55E]/10 border-[#22C55E]/20' : 'bg-[#00E5FF]/10 border-[#00E5FF]/20'} flex items-center justify-center border shadow-inner group-hover:scale-105 transition-transform`}><MapPin className={allArrived ? 'text-[#22C55E]' : 'text-[#00E5FF]'} size={18} /></div>
                <div className="min-w-0">
                   <p className="text-[9px] text-[#9CA3AF] font-black uppercase tracking-widest leading-none mb-1.5 opacity-40">Verified Sector</p>
-                  <h4 className="text-sm font-black text-[#E6EDF3] truncate leading-none uppercase tracking-tight">{incident.zone}</h4>
+                  <h4 className="text-sm font-black text-[#E6EDF3] truncate leading-none uppercase tracking-tight">
+                    {!incident.zone || incident.zone === 'pending' ? 'Coordinating...' : incident.zone}
+                  </h4>
                </div>
             </div>
             
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/[0.03]">
                <div>
                   <p className="text-[8px] text-[#9CA3AF] font-black mb-1.5 uppercase tracking-tighter opacity-40">Risk Assessment</p>
-                  <p className="text-[11px] font-black text-[#EF4444] capitalize">{incident.severity_block?.risk_level || 'Extreme'}</p>
+                  <p className={`text-[11px] font-black ${allArrived ? 'text-[#22C55E]' : 'text-[#EF4444]'} capitalize`}>{allArrived ? 'Mitigated' : (incident.severity_block?.risk_level || 'Extreme')}</p>
                </div>
                <div>
                   <p className="text-[8px] text-[#9CA3AF] font-black mb-1.5 uppercase tracking-tighter opacity-40">Est. Victims</p>
@@ -240,12 +257,12 @@ export const TrackingScreen = () => {
                    <Zap className="text-[#00E5FF]" size={14} />
                    <h4 className="text-[10px] font-black text-[#E6EDF3] uppercase tracking-widest">Fleet Telemetry</h4>
                 </div>
-                <div className="text-[8px] font-black text-[#22C55E] flex items-center gap-1.5 uppercase italic"><div className="w-1 h-1 rounded-full bg-[#22C55E] animate-pulse" />Active</div>
+                <div className={`text-[8px] font-black ${allArrived ? 'text-[#22C55E]' : 'text-[#00E5FF]'} flex items-center gap-1.5 uppercase italic`}><div className={`w-1 h-1 rounded-full ${allArrived ? 'bg-[#22C55E]' : 'bg-[#00E5FF]'} animate-pulse`} />{allArrived ? 'Secured' : 'Active'}</div>
              </header>
              <div className="space-y-2">
                 <StatusRow label="Assigned Assets" value={`${enrichedResources.length} Units`} />
                 <StatusRow label="Tactical Link" value="ENCRYPTED" color="#00E5FF" />
-                <StatusRow label="Mission Status" value="SEARCH & RESCUE" />
+                <StatusRow label="Mission Status" value={allArrived ? "COMPLETE" : "SEARCH & RESCUE"} color={allArrived ? "#22C55E" : undefined} />
              </div>
           </div>
         </div>
@@ -259,22 +276,38 @@ export const TrackingScreen = () => {
           {enrichedResources.map((res, idx) => (
             <React.Fragment key={res.name}>
               <Marker position={[Number(res.lat), Number(res.lng)]} icon={createEmojiIcon(getResourceEmoji(res.type), res.status === 'ARRIVED' ? '#10b981' : '#00E5FF')}>
-                <Tooltip direction="top" offset={[0, -20]} opacity={1} permanent className="custom-tooltip">
+                <Popup className="custom-popup" offset={[0, -10]}>
                    <div className="bg-[#0B0F17]/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[9px] font-black text-[#E6EDF3] shadow-xl uppercase tracking-widest">{res.name}</div>
-                </Tooltip>
+                </Popup>
               </Marker>
               {res.polyline && (
-                <Polyline positions={res.polyline} pathOptions={{ color: res.status === 'ARRIVED' ? '#10b981' : '#00E5FF', weight: 4, opacity: 0.6, lineCap: 'round', dashArray: res.status === 'ARRIVED' ? '0' : '8, 12', className: 'route-animate' }} />
+                <Polyline positions={res.polyline} pathOptions={{ color: res.status === 'ARRIVED' ? '#10b981' : '#00E5FF', weight: 4, opacity: 0.6, lineCap: 'round', dashArray: res.status === 'ARRIVED' ? '0' : '8, 12', className: res.status === 'ARRIVED' ? '' : 'route-animate' }} />
               )}
             </React.Fragment>
           ))}
           {!loading && <RecenterMap coords={[[centerLat, centerLng], ...enrichedResources.map(r => [Number(r.lat), Number(r.lng)])]} />}
         </MapContainer>
 
+        {/* MISSION COMPLETED TACTICAL BANNER */}
+        {showBanner && (
+          <div className="absolute top-1/2 left-1/2 z-[2000] pointer-events-none animate-banner-slide">
+             <div className="bg-[#0B0F17]/90 backdrop-blur-3xl border-2 border-[#22C55E] p-6 rounded-[2rem] shadow-[0_0_50px_rgba(34,197,94,0.3)] flex flex-col items-center gap-2 min-w-[400px]">
+                <div className="w-12 h-12 rounded-full bg-[#22C55E]/20 flex items-center justify-center text-[#22C55E] border border-[#22C55E]/40 mb-1">
+                   <ShieldCheck size={32} />
+                </div>
+                <h2 className="text-2xl font-black text-[#E6EDF3] tracking-[0.2em] uppercase leading-none">Mission Completed</h2>
+                <p className="text-[10px] text-[#9CA3AF] font-black uppercase tracking-widest opacity-60">All emergency units reached incident location</p>
+                <div className="mt-2 pt-3 border-t border-white/10 w-full flex justify-center">
+                   <span className="text-[9px] font-black text-[#22C55E] tracking-[0.3em] uppercase opacity-80">AREA SECURED • RESPONSE SUCCESSFUL</span>
+                </div>
+             </div>
+          </div>
+        )}
+
         {/* Floating Intelligence Overlay */}
         <div className="absolute top-6 right-6 z-[1000] transition-transform duration-500 group-hover:scale-105 pointer-events-none">
-          <div className="bg-[#0B0F17]/80 backdrop-blur-3xl border border-white/[0.1] p-5 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-6 border-l-[#00E5FF] border-l-4 min-w-[340px]">
-             <div className="w-12 h-12 rounded-2xl bg-[#00E5FF]/10 flex items-center justify-center text-[#00E5FF] border border-[#00E5FF]/20 shadow-inner ring-1 ring-white/5"><Navigation size={22} className="animate-pulse" /></div>
+          <div className={`bg-[#0B0F17]/80 backdrop-blur-3xl border border-white/[0.1] p-5 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-6 ${allArrived ? 'border-l-[#22C55E]' : 'border-l-[#00E5FF]'} border-l-4 min-w-[340px] transition-colors duration-1000`}>
+             <div className={`w-12 h-12 rounded-2xl ${allArrived ? 'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/20' : 'bg-[#00E5FF]/10 text-[#00E5FF] border-[#00E5FF]/20'} flex items-center justify-center border shadow-inner ring-1 ring-white/5`}><Navigation size={22} className={allArrived ? '' : 'animate-pulse'} /></div>
              <div className="flex-1 min-w-0 pr-4">
                <p className="text-[9px] text-[#9CA3AF] font-black mb-0.5 uppercase opacity-40 tracking-[0.2em] leading-none">Intelligence Sector</p>
                <p className="text-base font-black text-[#E6EDF3] truncate uppercase tracking-tight">{incident.zone}</p>
@@ -295,7 +328,7 @@ export const TrackingScreen = () => {
          <header className="px-6 py-5 border-b border-white/[0.06] bg-[#0B0F17]/80 flex items-center justify-between">
           <div>
             <h2 className="text-[10px] font-black text-[#9CA3AF] uppercase tracking-[0.2em] flex items-center gap-2">
-              <Activity className="text-[#00E5FF]" size={12} />
+              <Activity className={allArrived ? 'text-[#22C55E]' : 'text-[#00E5FF]'} size={12} />
               Asset Inventory
             </h2>
             <p className="text-[9px] font-bold text-[#9CA3AF] tracking-tighter opacity-40 uppercase">Real-time Deployment Stream</p>
@@ -317,7 +350,7 @@ export const TrackingScreen = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-xl font-black italic tracking-tighter leading-none ${res.status === 'ARRIVED' ? 'text-[#22C55E] animate-pulse' : 'text-[#00E5FF]'}`}>
+                  <div className={`text-xl font-black italic tracking-tighter leading-none ${res.status === 'ARRIVED' ? 'text-[#22C55E]' : 'text-[#00E5FF]'}`}>
                     {res.status === 'ARRIVED' ? '00:00' : `${String(res.currentEta).padStart(2, '0')}:${String(Math.floor(simulationTime % 60)).padStart(2, '0')}`}
                   </div>
                   <p className="text-[8px] text-[#9CA3AF] font-bold mt-1.5 uppercase opacity-40 tracking-widest">ARRIVAL ETA</p>
@@ -340,7 +373,7 @@ export const TrackingScreen = () => {
           )) : (
             <div className="space-y-5">
               {[1, 2, 3].map(i => (
-                <div key={i} className="h-32 w-full rounded-3xl bg-[#0B0F17]/40 animate-pulse border border-white/[0.06]" />
+                <div key={i} className="h-32 w-full rounded-3xl bg-[#0B0F17]/40 animate-pulse border border-white/[0.06]..." />
               ))}
             </div>
           )}
@@ -349,12 +382,22 @@ export const TrackingScreen = () => {
 
       <style>{`
         .leaflet-container { background: #05070B !important; }
-        .custom-tooltip { background: transparent !important; border: none !important; box-shadow: none !important; }
-        .custom-tooltip::before { display: none; }
+        .custom-popup .leaflet-popup-content-wrapper { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+        .custom-popup .leaflet-popup-tip-container { display: none !important; }
+        .custom-popup .leaflet-popup-content { margin: 0 !important; width: auto !important; }
+        .custom-popup .leaflet-popup-close-button { display: none !important; }
         .route-animate { stroke-dashoffset: 100; animation: dash 5s linear infinite; }
         @keyframes dash { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
         @keyframes flow-glow { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
         .scrollbar-hide::-webkit-scrollbar { display: none; } 
+        
+        .animate-banner-slide {
+          animation: banner-entry 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        @keyframes banner-entry {
+          0% { transform: translate(-50%, calc(-50% - 40px)) scale(0.9); opacity: 0; }
+          100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
       `}</style>
     </div>
   );
@@ -366,4 +409,3 @@ const StatusRow = ({ label, value, color }) => (
      <span className="text-[10px] font-black tracking-widest uppercase" style={{ color: color || '#E6EDF3' }}>{value}</span>
   </div>
 );
-

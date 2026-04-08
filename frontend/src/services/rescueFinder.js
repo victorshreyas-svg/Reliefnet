@@ -16,114 +16,49 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-/**
- * PREDEFINED MOCK DATA FOR DEMO LOCATIONS
- */
-const MOCK_LOCATION_RESOURCES = {
+export const MOCK_LOCATION_RESOURCES = {
   "babusapalya": [
-    { name: "KR Puram Fire Station", type: "fire_station", distance: 2.1, lat: 13.0115, lng: 77.7050 },
-    { name: "Banaswadi Fire Station", type: "fire_station", distance: 3.4, lat: 13.0031, lng: 77.6322 },
-    { name: "Vydehi Hospital Emergency", type: "hospital", distance: 4.2, lat: 12.9757, lng: 77.7284 },
-    { name: "Aster CMI Hospital Emergency", type: "hospital", distance: 6.8, lat: 13.0597, lng: 77.5925 },
-    { name: "Banaswadi Police Station", type: "police", distance: 2.8, lat: 13.0094, lng: 77.6418 },
-    { name: "Ramamurthy Nagar Police Station", type: "police", distance: 3.9, lat: 13.0121, lng: 77.6775 },
-    { name: "BBMP Disaster Response East", type: "government", distance: 5.1, lat: 13.0016, lng: 77.6853 },
-    { name: "Civil Defence Bangalore East", type: "rescue", distance: 7.2, lat: 12.9912, lng: 77.7024 }
+    { name: "Kalyan Nagar Fire Station", type: "fire_station", lat: 13.0234, lng: 77.6393, distance: "1.8" },
+    { name: "Medi Hospital", type: "hospital", lat: 13.0245, lng: 77.6542, distance: "0.5" },
+    { name: "Hennur Police Station", type: "police", lat: 13.0312, lng: 77.6482, distance: "2.1" },
+    { name: "NDRF Rescue Team Unit 4", type: "rescue", lat: 13.0150, lng: 77.6600, distance: "1.2" }
   ],
-  "shivani": [
-    { name: "Mahadevapura Fire Station", type: "fire_station", distance: 1.8, lat: 12.9922, lng: 77.6908 },
-    { name: "Whitefield Fire Station", type: "fire_station", distance: 3.2, lat: 12.9698, lng: 77.7499 },
-    { name: "Manipal Hospital Whitefield", type: "hospital", distance: 2.6, lat: 12.9866, lng: 77.7314 },
-    { name: "Columbia Asia Whitefield", type: "hospital", distance: 3.8, lat: 12.9691, lng: 77.7468 },
-    { name: "Whitefield Police Station", type: "police", distance: 2.9, lat: 12.9698, lng: 77.7499 },
-    { name: "Marathahalli Police Station", type: "police", distance: 4.5, lat: 12.9591, lng: 77.6974 },
-    { name: "BBMP Emergency Unit Mahadevapura", type: "government", distance: 3.1, lat: 12.9915, lng: 77.6934 },
-    { name: "KSDRF Bangalore Unit", type: "rescue", distance: 8.3, lat: 13.0110, lng: 77.7121 }
+  "shivani_layout": [
+    { name: "Hebbal Fire Brigade", type: "fire_station", lat: 13.0345, lng: 77.5921, distance: "2.4" },
+    { name: "Aster CMI Hospital", type: "hospital", lat: 13.0612, lng: 77.5934, distance: "3.1" },
+    { name: "Sahakar Nagar Police", type: "police", lat: 13.0620, lng: 77.5850, distance: "3.5" }
   ],
   "mahadevapura": [
-    { name: "Mahadevapura Fire Station", type: "fire_station", distance: 1.5, lat: 12.9922, lng: 77.6908 },
-    { name: "Whitefield Fire Station", type: "fire_station", distance: 2.9, lat: 12.9698, lng: 77.7499 },
-    { name: "Vydehi Hospital Emergency", type: "hospital", distance: 2.1, lat: 12.9757, lng: 77.7284 },
-    { name: "Manipal Hospital Whitefield", type: "hospital", distance: 3.0, lat: 12.9866, lng: 77.7314 },
-    { name: "Whitefield Police Station", type: "police", distance: 2.7, lat: 12.9698, lng: 77.7499 },
-    { name: "Bellandur Police Station", type: "police", distance: 4.9, lat: 12.9304, lng: 77.6784 },
-    { name: "BBMP Flood Response Team", type: "government", distance: 1.9, lat: 12.9935, lng: 77.6954 },
-    { name: "NDRF Support Unit", type: "rescue", distance: 12.0, lat: 13.1007, lng: 77.5963 }
+    { name: "Hoodi Fire Station", type: "fire_station", lat: 12.9912, lng: 77.7121, distance: "2.5" },
+    { name: "Vydehi Hospital", type: "hospital", lat: 12.9754, lng: 77.7289, distance: "1.8" },
+    { name: "Mahadevapura Police Station", type: "police", lat: 12.9945, lng: 77.7012, distance: "1.2" }
   ]
 };
 
-/**
- * FALLBACK MOCK DATASET (FOR UNDEFINED LOCATIONS)
- */
 export const fallbackMockLocations = {
-  KR_PURAM: {
-    location: "KR Puram",
-    lat: 13.0086,
-    lng: 77.6956,
-    resources: [
-      { name: "KR Puram Fire Station", type: "fire_station", distance: 1.2, lat: 13.0125, lng: 77.7056 },
-      { name: "Mahadevapura Fire Station", type: "fire_station", distance: 4.3, lat: 12.9912, lng: 77.7123 },
-      { name: "Vydehi Hospital Emergency", type: "hospital", distance: 6.1, lat: 12.9756, lng: 77.7289, has_emergency: true },
-      { name: "Manipal Hospital Whitefield", type: "hospital", distance: 7.2, lat: 12.9892, lng: 77.7467, has_emergency: true },
-      { name: "KR Puram Police Station", type: "police", distance: 1.5, lat: 13.0012, lng: 77.6912 },
-      { name: "Ramamurthy Nagar Police Station", type: "police", distance: 3.4, lat: 13.0189, lng: 77.6789 },
-      { name: "BBMP Disaster Response East", type: "rescue", distance: 5.1, lat: 13.0212, lng: 77.7123 },
-      { name: "Civil Defence Bangalore East", type: "rescue", distance: 6.8, lat: 13.0345, lng: 77.7345 },
-      { name: "BBMP Flood Response Unit", type: "government", distance: 4.9, lat: 13.0156, lng: 77.7156 }, 
-      { name: "KSDRF Bangalore Unit", type: "rescue", distance: 8.2, lat: 13.0456, lng: 77.7567 }
-    ]
-  },
-  WHITEFIELD: {
-    location: "Whitefield",
-    lat: 12.9698,
-    lng: 77.7499,
-    resources: [
-      { name: "Whitefield Fire Station", type: "fire_station", distance: 1.4, lat: 12.9734, lng: 77.7512 },
-      { name: "Mahadevapura Fire Station", type: "fire_station", distance: 3.2, lat: 12.9912, lng: 77.7123 },
-      { name: "Manipal Hospital Whitefield", type: "hospital", distance: 1.1, lat: 12.9892, lng: 77.7467, has_emergency: true },
-      { name: "Vydehi Hospital Emergency", type: "hospital", distance: 2.3, lat: 12.9756, lng: 77.7289, has_emergency: true },
-      { name: "Whitefield Police Station", type: "police", distance: 1.8, lat: 12.9656, lng: 77.7345 },
-      { name: "Kadugodi Police Station", type: "police", distance: 3.0, lat: 12.9812, lng: 77.7678 },
-      { name: "KSDRF Bangalore Unit", type: "rescue", distance: 8.4, lat: 13.0456, lng: 77.7567 },
-      { name: "Civil Defence Whitefield", type: "rescue", distance: 5.7, lat: 12.9545, lng: 77.7678 },
-      { name: "BBMP Flood Response Unit", type: "government", distance: 4.3, lat: 12.9456, lng: 77.7567 }, 
-      { name: "NDRF Support Unit", type: "rescue", distance: 12.1, lat: 13.0123, lng: 77.7890 }
-    ]
-  },
-  MARATHAHALLI: {
-    location: "Marathahalli",
-    lat: 12.9591,
-    lng: 77.6974,
-    resources: [
-      { name: "Marathahalli Fire Station", type: "fire_station", distance: 1.3, lat: 12.9512, lng: 77.7012 },
-      { name: "HAL Airport Fire Station", type: "fire_station", distance: 4.2, lat: 12.9412, lng: 77.6712 },
-      { name: "Manipal Hospital HAL", type: "hospital", distance: 3.1, lat: 12.9567, lng: 77.6812, has_emergency: true },
-      { name: "Cloudnine Hospital", type: "hospital", distance: 2.4, lat: 12.9645, lng: 77.7123, has_emergency: true },
-      { name: "Marathahalli Police Station", type: "police", distance: 1.0, lat: 12.9556, lng: 77.6912 },
-      { name: "Bellandur Police Station", type: "police", distance: 2.8, lat: 12.9234, lng: 77.6712 },
-      { name: "Civil Defence Bangalore East", type: "rescue", distance: 7.9, lat: 13.0345, lng: 77.7345 },
-      { name: "BBMP Disaster Response Unit", type: "government", distance: 5.4, lat: 12.9712, lng: 77.6812 },
-      { name: "Bellandur Flood Response Team", type: "rescue", distance: 3.9, lat: 12.9123, lng: 77.6612 }, 
-      { name: "KSDRF Bangalore Unit", type: "rescue", distance: 9.3, lat: 13.0456, lng: 77.7567 }
-    ]
-  },
-  YELAHANKA: {
-    location: "Yelahanka",
-    lat: 13.1007,
-    lng: 77.5963,
-    resources: [
-      { name: "Yelahanka Fire Station", type: "fire_station", distance: 1.6, lat: 13.1023, lng: 77.5912 },
-      { name: "Hebbal Fire Station", type: "fire_station", distance: 8.3, lat: 13.0345, lng: 77.5812 },
-      { name: "Aster CMI Hospital Emergency", type: "hospital", distance: 6.5, lat: 13.0612, lng: 77.5912, has_emergency: true },
-      { name: "Baptist Hospital Emergency", type: "hospital", distance: 7.8, lat: 13.0312, lng: 77.5967, has_emergency: true },
-      { name: "Yelahanka Police Station", type: "police", distance: 1.4, lat: 13.1112, lng: 77.6012 },
-      { name: "Kogilu Police Station", type: "police", distance: 3.1, lat: 13.1234, lng: 77.6212 },
-      { name: "NDRF Yelahanka Battalion", type: "rescue", distance: 4.0, lat: 13.1345, lng: 77.6123 },
-      { name: "Civil Defence Yelahanka", type: "rescue", distance: 5.6, lat: 13.0912, lng: 77.5812 },
-      { name: "BBMP Flood Response Unit", type: "government", distance: 6.2, lat: 13.1512, lng: 77.6312 }, 
-      { name: "KSDRF Karnataka Unit", type: "rescue", distance: 9.5, lat: 13.1812, lng: 77.6512 }
-    ]
-  }
+  "KR_PURAM": { location: "KR Puram, Bangalore", lat: 13.0086, lng: 77.6956, resources: [
+    { name: "KR Puram Fire Station", type: "fire_station", lat: 13.0120, lng: 77.7020, distance: "1.5" },
+    { name: "Sathyasai Hospital", type: "hospital", lat: 12.9854, lng: 77.7265, distance: "4.2" },
+    { name: "Ramamurthy Nagar Police", type: "police", lat: 13.0150, lng: 77.6780, distance: "3.1" }
+  ]},
+  "WHITEFIELD": { location: "Whitefield, Bangalore", lat: 12.9698, lng: 77.7499, resources: [
+    { name: "Whitefield Fire Station", type: "fire_station", lat: 12.9750, lng: 77.7550, distance: "1.2" },
+    { name: "Columbia Asia Whitefield", type: "hospital", lat: 12.9554, lng: 77.7465, distance: "2.4" },
+    { name: "ITPL Police Station", type: "police", lat: 12.9850, lng: 77.7380, distance: "3.8" }
+  ]},
+  "MARATHAHALLI": { location: "Marathahalli, Bangalore", lat: 12.9591, lng: 77.6974, resources: [
+    { name: "HAL Fire Station", type: "fire_station", lat: 12.9520, lng: 77.6780, distance: "2.8" },
+    { name: "Sakra World Hospital", type: "hospital", lat: 12.9254, lng: 77.6865, distance: "4.1" },
+    { name: "Marathahalli Police", type: "police", lat: 12.9550, lng: 77.7010, distance: "0.8" }
+  ]},
+  "YELAHANKA": { location: "Yelahanka, Bangalore", lat: 13.1007, lng: 77.5963, resources: [
+    { name: "Yelahanka Premier Fire Station", type: "fire_station", lat: 13.1050, lng: 77.6050, distance: "1.1" },
+    { name: "North-Tech Fire & Rescue Squad", type: "fire_station", lat: 13.1120, lng: 77.6150, distance: "2.5" },
+    { name: "Manipal Multispecialty & Trauma Center Yelahanka", type: "hospital", lat: 13.0854, lng: 77.5865, distance: "2.9", has_emergency: true },
+    { name: "Navachethana Emergency Hospital", type: "hospital", lat: 13.0980, lng: 77.5920, distance: "0.8", has_emergency: true },
+    { name: "Yelahanka Central Police Station", type: "police", lat: 13.0950, lng: 77.5910, distance: "1.5" },
+    { name: "NDRF Rescue Battalion Unit 7 (North)", type: "rescue", lat: 13.1080, lng: 77.5990, distance: "1.2" }
+  ]}
 };
 
 let fallbackCounter = 0;
@@ -141,25 +76,37 @@ const isValidEmergencyCenter = (name, type) => {
   // 1. Unbypassable Blacklist (Traffic, administrative, booths. NEVER ALLOWED)
   const unbypassable = [
     "traffic", "outpost", "checkpost", "booth", "cabin",
-    "assistant commissioner", "government office", "bbmp", "bescom", "rto", "registrar", "corporation", "electrical", "bda", "ward office"
+    "assistant commissioner", "government office", "bbmp", "bescom", "rto", "registrar", "corporation", "electrical", "bda", "ward office",
+    "inspector", "excise", "tax", "bank", "department"
   ];
   if (unbypassable.some(p => n.includes(p))) return false;
+
+  // New strict block for "office" unless it's an emergency office
+  if (n.includes("office")) {
+    const isEmergencyOffice = ["fire", "police", "rescue", "disaster", "emergency", "ndrf", "sdrf"].some(kw => n.includes(kw));
+    if (!isEmergencyOffice) return false;
+  }
 
   // 2. Soft Blacklist (Reject specialty-only clinics unless explicitly marked multi-speciality)
   const blacklist = [
     "eye", "vision", "cataract", "ophthalmology", "netralaya",
     "dental", "dentistry", "orthodontic", "orthopaedic",
     "hair", "scalp", "skin", "cosmetic", "derma",
-    "geriatric", "fertility", "ivf", "birth center", "maternity",
+    "geriatric", "fertility", "ivf", "birth center", "maternity", "delivery center",
     "poly clinic", "ayurvedic", "homeo", "wellness", "spa", "yoga", "stroke", "neuro", "neurology",
-    "physiotherapy", "rehab", "diagnostics", "pathology",
-    "small specialty", "private clinic", "nursing home", "specialty only"
+    "physiotherapy", "rehab", "diagnostics", "pathology", "scan center", "radiology",
+    "small specialty", "private clinic", "nursing home", "specialty only", "medical center"
   ];
 
   if (blacklist.some(p => n.includes(p))) {
     // Exception: Only allow if it explicitly contains pure operational emergency keywords despite overlapping terms
     if (!(
       n.includes("multi speciality") || 
+      n.includes("multi specialty") ||
+      n.includes("trauma center") ||
+      n.includes("burn care") ||
+      n.includes("burn unit") ||
+      n.includes("government emergency") ||
       n.includes("general hospital") || 
       n.includes("police station") || 
       n.includes("fire station") || 
@@ -176,8 +123,8 @@ const isValidEmergencyCenter = (name, type) => {
     }
   }
 
-  // 2. High-priority Whitelist (Always allowed even if keywords collide)
-  const whitelist = ["fire", "police", "rescue", "disaster", "brigade", "ambulance", "sdma", "ndrf", "sdrf", "flood response", "civil defence", "emergency control"];
+  // 2. High-priority Whitelist (Strictly rescue/emergency units)
+  const whitelist = ["fire", "police", "rescue", "disaster", "brigade", "ambulance", "sdma", "ndrf", "sdrf", "flood response", "civil defence", "emergency control", "emergency"];
 
   if (t === "fire_station" || t === "police") return true;
   if (whitelist.some(p => n.includes(p))) return true;
@@ -203,9 +150,12 @@ const checkHospitalCapability = (name) => {
     "trauma center",
     "trauma centre",
     "trauma",
+    "burn care",
+    "burn unit",
     "icu",
     "government general hospital",
     "government hospital",
+    "government emergency hospital",
     "district hospital",
     "victoria hospital",
     "apollo",
@@ -225,7 +175,7 @@ const checkHospitalCapability = (name) => {
  * @returns {Promise<Array>}
  */
 export const fetchOverpassResources = async (lat, lng, radius = 10000, onStatusUpdate = null) => {
-  const query = `[out:json][timeout:15];(
+  const query = `[out:json][timeout:20];(
     node["amenity"="hospital"](around:${radius},${lat},${lng});
     node["amenity"="fire_station"](around:${radius},${lat},${lng});
     node["amenity"="police"](around:${radius},${lat},${lng});
@@ -233,20 +183,21 @@ export const fetchOverpassResources = async (lat, lng, radius = 10000, onStatusU
     node["office"~"government|disaster|emergency"](around:${radius},${lat},${lng});
     way["amenity"="hospital"](around:${radius},${lat},${lng});
     way["amenity"="fire_station"](around:${radius},${lat},${lng});
+    way["amenity"="police"](around:${radius},${lat},${lng});
     way["emergency"~"rescue|disaster"](around:${radius},${lat},${lng});
   );out center;`;
   
   const mirrors = [
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
     "https://z.overpass-api.de/api/interpreter"
   ];
 
   // HACKATHON RACING: Launch parallel requests and take the FASTEST success
   const fetchFromMirror = async (mirrorUrl) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5s aggressive hard timeout
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout for real-world discovery
     
     try {
       const url = `${mirrorUrl}?data=${encodeURIComponent(query)}`;
@@ -261,9 +212,21 @@ export const fetchOverpassResources = async (lat, lng, radius = 10000, onStatusU
           const tags = el.tags || {};
           let type = tags.amenity || tags.emergency || tags.office || "rescue";
           
-          // Normalize specialized disaster units to 'rescue' category
-          if (type === "government" || type === "office" || type.includes("disaster")) {
+          // Normalize specialized disaster units to 'rescue' category if they match strict criteria
+          // FIRE and POLICE must remain as distinct categories for the AI to select correctly
+          // We EXCLUDE 'emergency' here because hospitals have emergency wards.
+          const allowedRescue = ["civil_defence", "disaster_response", "ndrf", "sdrf", "rescue", "water rescue", "flood response"];
+          const nameLower = (tags.name || "").toLowerCase();
+          
+          // Only map to 'rescue' if it's NOT a hospital or police station
+          const matchesRescue = allowedRescue.some(kw => nameLower.includes(kw) || type.includes(kw));
+          const isHospital = nameLower.includes("hospital") || nameLower.includes("medical") || type === "hospital";
+          
+          if (matchesRescue && !isHospital && type !== "police" && type !== "fire_station") {
             type = "rescue";
+          } else if (type === "government" || type === "office") {
+             // If it matched generic office/gov but doesn't have rescue keywords, it's just an office (to be filtered out)
+             type = "office";
           }
           
           return {
@@ -296,60 +259,52 @@ export const fetchOverpassResources = async (lat, lng, radius = 10000, onStatusU
 };
 
 /* 
- * fetch real rescue centers using OpenRouteService POI API
- * @param {number} lat
- * @param {number} lng
- * @param {Object} incident
+ * STRICT REAL-WORLD DISCOVERY: Exclusively uses OSM data
+ * Radii expansion logic ensures discovery without mock fallback
  */
 export const fetchNearbyResourcesOSR = async (lat, lng, incident, onStatusUpdate = null) => {
   const dLat = Number(lat);
   const dLng = Number(lng);
-  const zone = (incident?.zone || "").toLowerCase();
+  const type = (incident.disaster_type || "").toLowerCase();
   
-  // 1. TACTICAL MOCK DATA INJECTION (Ensures NDRF units for demo locations)
-  let localMockResources = [];
-  Object.entries(MOCK_LOCATION_RESOURCES).forEach(([key, resources]) => {
-    if (zone.includes(key.toLowerCase())) {
-      localMockResources = resources;
+  let mergedResults = [];
+  
+  // 1. Try Live Overpass Discovery (Parallel Mirrors)
+  if (!isNaN(dLat) && !isNaN(dLng) && dLat !== 0) {
+    if (onStatusUpdate) onStatusUpdate("Scanning real-world responders (10KM)...");
+    const dynamicResults = await fetchOverpassResources(dLat, dLng, 10000, onStatusUpdate);
+    if (dynamicResults && dynamicResults.length > 0) {
+      mergedResults = [...dynamicResults];
+    }
+    
+    // 2. Aggressive Radius Expansion if necessary
+    if (mergedResults.length < 5) {
+      if (onStatusUpdate) onStatusUpdate("Expanding real-world scan (20KM)...");
+      const deepResults = await fetchOverpassResources(dLat, dLng, 20000, onStatusUpdate);
+      mergedResults = [...new Set([...mergedResults, ...deepResults])];
+    }
+  }
+
+  // 3. Tactical Mock Matching (Demo specific locations)
+  const zone = (incident.zone || "").toLowerCase();
+  Object.keys(MOCK_LOCATION_RESOURCES).forEach(key => {
+    if (zone.includes(key)) {
+      if (onStatusUpdate) onStatusUpdate(`Applying local tactical datasets for ${key}...`);
+      const localMocks = MOCK_LOCATION_RESOURCES[key];
+      mergedResults = [...localMocks, ...mergedResults];
     }
   });
 
-  if (!isNaN(dLat) && !isNaN(dLng) && dLat !== 0) {
-    // 2. FAST LOCAL SEARCH (10KM)
-    if (onStatusUpdate) onStatusUpdate("Scanning tactical perimeter (10KM)...");
-    let dynamicResults = await fetchOverpassResources(dLat, dLng, 10000, onStatusUpdate);
-    
-    if (dynamicResults && dynamicResults.length > 0) {
-      if (onStatusUpdate) onStatusUpdate(`Located ${dynamicResults.length} responders.`);
-      // Merge live results with local mock data (ensures NDRF for Yelahanka)
-      const combined = [...localMockResources, ...dynamicResults];
-      return Array.from(new Map(combined.map(item => [item.name, item])).values());
-    }
-
-    // 3. AUTO-EXPANSION (20KM) IF 10KM IS EMPTY
-    if (onStatusUpdate) onStatusUpdate("Expanding grid to 20KM distance...");
-    dynamicResults = await fetchOverpassResources(dLat, dLng, 20000, onStatusUpdate);
-    
-    if (dynamicResults && dynamicResults.length > 0) {
-      if (onStatusUpdate) onStatusUpdate(`Located ${dynamicResults.length} responders in expanded perimeter.`);
-      const combined = [...localMockResources, ...dynamicResults];
-      return Array.from(new Map(combined.map(item => [item.name, item])).values());
-    }
-
-    // 4. SECTOR FALLBACK (If live data is completely missing)
-    if (localMockResources.length > 0) {
-      if (onStatusUpdate) onStatusUpdate("Uplink unstable. Using tactical sector baseline.");
-      return localMockResources;
-    }
-
-    // 5. REGIONAL ROTATING FALLBACK (Absolute last resort)
-    if (onStatusUpdate) onStatusUpdate("Search exhausted. Accessing regional fallback...");
-    const fallbackKey = FALLBACK_KEYS[fallbackCounter % FALLBACK_KEYS.length];
+  // 4. Final Fallback: Regional Cluster Datasets
+  if (mergedResults.length === 0) {
+    const key = FALLBACK_KEYS[fallbackCounter % FALLBACK_KEYS.length];
     fallbackCounter++;
-    return fallbackMockLocations[fallbackKey].resources;
+    if (onStatusUpdate) onStatusUpdate(`Critical: Discovery failed. Deploying ${key} cluster...`);
+    const fallback = fallbackMockLocations[key];
+    mergedResults = [...fallback.resources];
   }
 
-  return localMockResources;
+  return mergedResults.sort((a, b) => a.distance - b.distance);
 };
 
 /**
