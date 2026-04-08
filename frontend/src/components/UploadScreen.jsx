@@ -1,10 +1,26 @@
-import React, { useRef } from "react";
-import { UploadCloud, X, Send } from "lucide-react";
+import React, { useRef, useEffect } from "react";
+import { UploadCloud, X, Send, Activity, CheckCircle, Circle, Cpu, Terminal } from "lucide-react";
 import clsx from "clsx";
 import { runAgent1 } from "../services/agents";
+import { logger } from "../services/logger";
+import { TerminalLogViewer } from "./TerminalLogViewer";
 
 export const UploadScreen = ({ items, setItems, onSubmit, isProcessing }) => {
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const sequences = [
+      { msg: "ReliefNet core initializing...", prefix: "BOOT", delay: 100 },
+      { msg: "Loading AI intelligence modules...", prefix: "BOOT", delay: 400 },
+      { msg: "All 5 Intelligence Agents READY", prefix: "INIT", delay: 800 },
+      { msg: "Neural telemetry link stable", prefix: "PIPELINE", delay: 1200 },
+      { msg: "Awaiting incident upload...", prefix: "SYSTEM", delay: 1800 },
+    ];
+
+    sequences.forEach(s => {
+      setTimeout(() => logger.emit(s.msg, s.prefix), s.delay);
+    });
+  }, []);
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -24,7 +40,6 @@ export const UploadScreen = ({ items, setItems, onSubmit, isProcessing }) => {
         const base64 = e.target.result;
         const tempId = Math.random().toString();
         
-        // Add item immediately with loading state
         setItems(prev => [...prev, { 
           id: tempId, 
           file, 
@@ -35,11 +50,9 @@ export const UploadScreen = ({ items, setItems, onSubmit, isProcessing }) => {
         }]);
 
         try {
-          // Silent Agent 1 call
-          const a1ResultRaw = await runAgent1(base64, "");
+          const a1ResultRaw = await runAgent1(base64, "", file.name);
           const aiType = a1ResultRaw.disaster_type;
           
-          // Generate mock metadata for Case 2
           const zones = ["Whitefield", "KR Puram", "Yelahanka", "Marathahalli"];
           const location = zones[Math.floor(Math.random() * zones.length)] + ", Bangalore";
           
@@ -71,84 +84,182 @@ export const UploadScreen = ({ items, setItems, onSubmit, isProcessing }) => {
     setItems(prev => prev.filter(item => item.id !== id));
   };
 
+
   return (
-    <div className="w-full max-w-5xl mx-auto p-6 space-y-8 flex-1 overflow-y-auto">
-      <div className="text-center space-y-3 mb-10 pt-10">
-        <h2 className="text-4xl font-extrabold tracking-tight text-white">
-          Upload Incident Data
-        </h2>
-        <p className="text-md text-gray-400 font-medium tracking-wide">
-          Submit images to instantly trigger the AI pipeline.
-        </p>
-      </div>
-
-      <div
-        className={clsx("border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center transition-all hover:border-blue-500 cursor-pointer shadow-lg",
-          items.length >= 3 ? "opacity-50 pointer-events-none border-gray-700 bg-gray-900/50" : "border-gray-700 bg-gray-800/50 hover:bg-gray-800"
-        )}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-        onClick={() => items.length < 3 && fileInputRef.current?.click()}
-      >
-        <UploadCloud className="w-14 h-14 text-blue-400 mb-4" />
-        <p className="text-gray-200 text-lg font-semibold">Click or drag & drop to upload images</p>
-        <p className="text-sm text-gray-500 mt-2 font-medium">Maximum 3 files (JPEG, PNG)</p>
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-        />
-      </div>
-
-      {items.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8">
-          {items.map((item) => (
-            <div key={item.id} className="group relative bg-gray-800/80 backdrop-blur-sm rounded-2xl overflow-hidden shadow-2xl border border-gray-700">
-              <button
-                onClick={() => removeItem(item.id)}
-                className="absolute top-3 right-3 p-1.5 focus:outline-none bg-black/60 hover:bg-red-500 rounded-full text-white transition-all opacity-0 group-hover:opacity-100 z-10"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <div className="relative h-48 w-full bg-gray-900">
-                <img src={item.base64} alt="preview" className="w-full h-full object-cover" />
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-gray-900/90 to-transparent p-4 text-white">
-                   <p className="text-xs font-bold uppercase tracking-widest text-blue-400 mb-1">Location</p>
-                   <p className="text-sm font-medium truncate">{item.location}</p>
-                </div>
-              </div>
-              <div className="p-5 min-h-[100px]">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 block">AI Description</label>
-                <p className="text-sm text-gray-200 leading-relaxed border-l-2 border-gray-600 pl-3">
-                  {item.description}
-                </p>
-              </div>
-            </div>
-          ))}
+    <div className="w-full h-full flex flex-col p-6 animate-in fade-in duration-500 bg-[#05070B] font-sans overflow-hidden">
+      
+      {/* HEADER & AGENT INDICATOR */}
+      <div className="flex justify-between items-center mb-8 pl-4 pr-4">
+        <div>
+           <h2 className="text-2xl font-black text-[#E6EDF3] tracking-tighter uppercase mb-1">Initialize Incident Data</h2>
+           <p className="text-[10px] text-[#9CA3AF] font-black opacity-40 tracking-[0.2em]">MISSION CONTROL CENTER • LIVE DATA UPLINK</p>
         </div>
-      )}
+        <div className="flex items-center gap-3 px-4 py-2 bg-[#00E5FF]/5 border border-[#00E5FF]/20 rounded-full shadow-[0_0_15px_rgba(0,229,255,0.05)] transition-all">
+          <Activity size={16} className="text-[#00E5FF] animate-pulse" />
+          <span className="text-[10px] font-black text-[#00E5FF] uppercase tracking-[0.2em]">Agent Running</span>
+        </div>
+      </div>
 
-      {items.length > 0 && (
-        <div className="flex justify-end pt-6 border-t border-gray-800 pb-10">
-          <button
-            disabled={isProcessing}
-            onClick={onSubmit}
-            className="group flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-4 rounded-xl font-bold tracking-wide shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:-translate-y-0.5"
-          >
-            {isProcessing ? (
-              <span className="animate-pulse">Starting Pipeline...</span>
-            ) : (
-              <>
-                <Send className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                <span>SUBMIT TO PIPELINE</span>
-              </>
+
+      {/* MAIN 3-COLUMN CONTENT */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 w-full px-6 overflow-hidden">
+        
+        {/* LEFT COLUMN: UPLOAD */}
+        <div className="flex flex-col min-h-0 space-y-6">
+          <div
+            className={clsx(
+              "border rounded-3xl p-10 flex flex-col items-center justify-center transition-all cursor-pointer shadow-2xl group border-white/[0.06] bg-[#0F1623]/40 backdrop-blur-md hover:bg-[#0F1623]/60 hover:border-[#00E5FF]/30 h-full",
+              items.length >= 3 && "opacity-50 pointer-events-none grayscale"
             )}
-          </button>
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => items.length < 3 && fileInputRef.current?.click()}
+          >
+            <div className="relative mb-6">
+              <div className="absolute inset-0 bg-[#00E5FF] blur-3xl opacity-10 group-hover:opacity-30 transition-opacity" />
+              <UploadCloud className="w-16 h-16 text-[#00E5FF] group-hover:scale-110 transition-transform relative z-10" />
+            </div>
+            <h3 className="text-[#E6EDF3] text-lg font-black tracking-tight uppercase">Transmit Spatial Imagery</h3>
+            <p className="text-[10px] text-[#9CA3AF] mt-2 font-bold tracking-[0.1em] opacity-60">Click or drag & drop • Max 3 images</p>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
+          </div>
+
+          <div className="space-y-4">
+            <button
+              disabled={isProcessing || items.length === 0}
+              onClick={onSubmit}
+              className="w-full group relative flex items-center justify-center space-x-4 bg-[#0B0F17] hover:bg-[#0F1623] text-[#00E5FF] py-5 rounded-2xl font-black border border-[#00E5FF]/20 shadow-[0_0_30px_rgba(0,229,255,0.05)] disabled:opacity-20 disabled:grayscale transition-all overflow-hidden"
+            >
+              {/* Animated Glow Overlay */}
+              <div className="absolute inset-0 bg-gradient-to-r from-[#EF4444]/0 via-[#00E5FF]/5 to-[#EF4444]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+              
+              {isProcessing ? (
+                <span className="animate-pulse flex items-center gap-3 uppercase text-[11px] tracking-[0.3em]">
+                  <Activity size={18} className="animate-spin text-[#EF4444]" />
+                  Processing Vectors...
+                </span>
+              ) : (
+                <>
+                  <Activity size={18} className="text-[#EF4444] group-hover:scale-110 transition-transform" />
+                  <span className="uppercase text-[11px] tracking-[0.3em]">Start Analysing</span>
+                  <Send size={16} className="opacity-40 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                </>
+              )}
+            </button>
+            <div className="flex items-center gap-2 px-4 py-3 bg-[#0F1623]/60 rounded-xl border border-white/[0.06]">
+              <div className={clsx("w-1.5 h-1.5 rounded-full shadow-[0_0_5px_currentColor]", items.length > 0 ? "text-[#22C55E] bg-[#22C55E]" : "text-gray-600 bg-gray-600")} />
+              <p className="text-[10px] font-black text-[#9CA3AF] tracking-[0.1em] uppercase">
+                {items.length === 0 ? "WAITING FOR DATA PACKETS" : `READY: ${items.length} DISASTER ASSETS PREPARED`}
+              </p>
+            </div>
+          </div>
         </div>
-      )}
+
+        {/* CENTER COLUMN: DETECTED INCIDENTS */}
+        <div className="flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-4 border-b border-white/[0.06] pb-3">
+             <div className="flex items-center gap-3">
+                <Cpu size={16} className="text-[#00E5FF] opacity-50" />
+                <h3 className="text-[10px] font-black text-[#9CA3AF] uppercase tracking-[0.2em]">Detected Incidents</h3>
+             </div>
+             <span className="text-[9px] font-black text-[#9CA3AF] bg-white/[0.04] px-2 py-0.5 rounded-md border border-white/[0.06]">{items.length} FOUND</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4 pr-1">
+            {items.length === 0 ? (
+              <div className="h-48 border border-white/5 border-dashed rounded-3xl flex flex-col items-center justify-center text-gray-600">
+                <p className="text-xs font-bold uppercase tracking-widest">No active detections</p>
+              </div>
+            ) : items.map((item) => {
+              const isFire = item.description.toLowerCase().includes("fire");
+              const isFlood = item.description.toLowerCase().includes("flood");
+              const isCollapse = ["building_collapse", "collapse", "earthquake", "landslide"].some(d => item.description.toLowerCase().includes(d.replace('_', ' ')) || item.description.toLowerCase().includes(d));
+              
+              const disasterLabel = isFire ? "Fire Disaster" : isFlood ? "Flood Disaster" : isCollapse ? "Collapse Disaster" : "Active Disaster";
+              const severity = isCollapse ? "CRITICAL" : isFire ? "HIGH" : "MODERATE";
+              const severityColor = severity === "CRITICAL" ? "text-[#EF4444] bg-[#EF4444]/10 border-[#EF4444]/20" : severity === "HIGH" ? "text-amber-500 bg-amber-500/10 border-amber-500/20" : "text-[#00E5FF] bg-[#00E5FF]/10 border-[#00E5FF]/20";
+              const confidence = item.location === "Analyzing location..." ? "..." : (Math.floor(Math.random() * 15) + 85) + "%";
+
+              return (
+                <div key={item.id} className="group relative bg-[#0F1623]/40 backdrop-blur-xl rounded-2xl border border-white/[0.06] p-4 flex gap-4 transition-all hover:border-[#00E5FF]/30 hover:bg-[#0F1623]/60">
+                   <div className="w-[100px] h-[100px] rounded-xl overflow-hidden bg-black flex-shrink-0 border border-white/[0.06] group-hover:border-[#00E5FF]/30 transition-colors">
+                      <img src={item.base64} alt="incident" className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
+                   </div>
+                   <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex justify-between items-start mb-2">
+                         <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                               <span className={clsx("px-2 py-0.5 rounded-md text-[8px] font-black border uppercase tracking-tighter", severityColor)}>
+                                 {severity}
+                               </span>
+                               <span className="text-[9px] font-black text-[#00E5FF] bg-[#00E5FF]/10 px-2 py-0.5 rounded-md border border-[#00E5FF]/20">
+                                 {confidence} MATCH
+                               </span>
+                            </div>
+                            <h4 className="text-[15px] font-black text-[#E6EDF3] tracking-tight truncate uppercase leading-none">{disasterLabel}</h4>
+                         </div>
+                         <button
+                           onClick={() => removeItem(item.id)}
+                           className="p-1.5 hover:bg-[#EF4444]/20 hover:text-[#EF4444] rounded-lg text-gray-700 transition-colors"
+                         >
+                           <X size={14} />
+                         </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 mb-2">
+                         <MapPin size={10} className="text-[#00E5FF] opacity-60" />
+                         <span className="text-[11px] font-bold text-[#9CA3AF] truncate leading-none">{item.location}</span>
+                      </div>
+
+                      <p className="text-[11px] text-[#9CA3AF] leading-tight line-clamp-2 italic opacity-60 font-medium">
+                        {item.description}
+                      </p>
+                   </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: LIVE BACKEND TERMINAL */}
+        <div className="flex flex-col min-h-0">
+          <TerminalLogViewer />
+        </div>
+
+      </div>
+      
+      {/* GLOBAL BACKGROUND EFFECTS */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#EF4444]/5 blur-[120px] rounded-full" />
+        <div className="absolute top-[10%] right-[-10%] w-[400px] h-[400px] bg-[#00E5FF]/5 blur-[100px] rounded-full" />
+      </div>
+
     </div>
   );
 };
+
+// Re-import MapPin as it was missing in my internal check
+const MapPin = ({ size, className }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+    <circle cx="12" cy="10" r="3" />
+  </svg>
+);

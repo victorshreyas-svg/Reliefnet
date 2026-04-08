@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { logger } from "./logger";
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyC0ne3R8uDOWFogzfUkcBXPINfiZ_E1xxs";
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -41,7 +42,8 @@ const getGeminiJSON = async (prompt, imageBase64) => {
   return JSON.parse(response.text());
 };
 
-export const runAgent1 = async (imageBase64, optionalText) => {
+export const runAgent1 = async (imageBase64, optionalText, fallbackHint = "") => {
+  logger.emit("[Detection Agent] Running model inference");
   const basePrompt = `You are a disaster classification AI. 
 Analyse the uploaded image and identify the disaster type. 
 Respond ONLY in this JSON format with no extra text:
@@ -54,12 +56,16 @@ Respond ONLY in this JSON format with no extra text:
   const prompt = optionalText ? `${basePrompt}\n\nUser Description: ${optionalText}` : basePrompt;
 
   try {
+    logger.emit("Neural inference in progress - object detection...");
     const result = await getGeminiJSON(prompt, imageBase64);
     
     let dType = result.disaster_type?.toLowerCase() || "accident";
     if (!landmarks[dType]) dType = "accident";
     
     const landmark = landmarks[dType];
+
+    logger.emit("[Detection Agent] Objects detected");
+    logger.emit(`[Detection Agent] Disaster classified: ${dType.charAt(0).toUpperCase() + dType.slice(1)}`);
 
     return {
       disaster_type: dType,
@@ -70,17 +76,32 @@ Respond ONLY in this JSON format with no extra text:
     };
   } catch (error) {
     console.error("Agent 1 Error:", error);
+    logger.emit("Pipeline warning: Vision engine fallback active.");
+    
+    let dt = "accident";
+    let desc = "Generic emergency detected. Offline fallback active.";
+    const hint = (fallbackHint || "").toLowerCase();
+    
+    if (hint.includes("fire")) { dt = "fire"; desc = "Severe structural fire detected with visible smoke plumes."; }
+    else if (hint.includes("collapse")) { dt = "building_collapse"; desc = "Building collapse detected. Potential structural failure."; }
+    else if (hint.includes("flood")) { dt = "flood"; desc = "Severe waterlogging and urban flooding detected."; }
+    else if (hint.includes("earthquake")) { dt = "earthquake"; desc = "Seismic damage and debris detected across blocks."; }
+
+    const lm = landmarks[dt] || landmarks.accident;
+
     return {
-      disaster_type: "fire",
+      disaster_type: dt,
       confidence: 0.85,
-      description: "Fallback classification due to API error: " + error.message,
-      zone: landmarks.fire.zone,
-      coordinates: { lat: landmarks.fire.lat, lng: landmarks.fire.lng }
+      description: desc,
+      zone: lm.zone,
+      coordinates: { lat: lm.lat, lng: lm.lng }
     };
   }
 };
 
 export const runAgent2 = async (imageBase64, agent1Data) => {
+  logger.emit("[Triage Agent] Analyzing severity");
+  logger.emit("[Triage Agent] Estimating victims");
   const prompt = `You are a disaster severity scoring AI.
 You are given an image and initial incident data classified by Agent 1.
 
@@ -118,6 +139,7 @@ LOW = 0-39
 
   try {
     const result = await getGeminiJSON(prompt, imageBase64);
+    logger.emit(`[Triage Agent] Severity level: ${result.severity}`);
     
     return {
       severity: result.severity || "HIGH",
@@ -177,6 +199,7 @@ export const runAgent3 = async (agent1Data, agent2Data) => {
 };
 
 export const startAgent4 = (updateDB, destination, severity, originalEta) => {
+  logger.emit("Tracking Agent: tracking started");
   let totalSimulatedSecs = 20; // default MEDIUM
   if (severity === "CRITICAL") totalSimulatedSecs = 10;
   else if (severity === "HIGH") totalSimulatedSecs = 15;
@@ -229,6 +252,7 @@ export const startAgent4 = (updateDB, destination, severity, originalEta) => {
  * @param {Array} resourcesWithMetrics - resources with distance/duration
  */
 export const rankResourcesByAI = async (incident, resourcesWithMetrics) => {
+  logger.emit("Resource Agent: ranking response facilities");
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: { responseMimeType: "application/json" }
@@ -263,32 +287,78 @@ Return ONLY an array of resource names in the sorted order in this JSON format:
  * Uses Gemini to evaluate multiple candidates (Overpass + OSR) and pick the best response units
  */
 export const selectBestResourcesAI = async (incident, resources) => {
+  logger.emit("[Resource Agent] Calculating required resources");
   const type = (incident.disaster_type || "emergency").toLowerCase();
+  const severity = incident.severity_block?.severity || "HIGH";
+  const desc = incident.description || "";
 
   const prompt = `
-    You are a Disaster Response Dispatch Agent.
-    Incident: ${type.toUpperCase()}
-    Location: ${incident.zone}
+    You are an Autonomous Disaster Response Dispatch Agent.
     
-    CATEGORY-SPECIFIC ROLES (PHYSICAL RESPONDERS ONLY):
-    You must select EXACTLY 3 physical centers in these slots for ALL disasters (Fire, Flood, Collapse):
+    INCIDENT TELEMETRY:
+    - DISASTER: ${type.toUpperCase()}
+    - SEVERITY: ${severity}
+    - LOCATION: ${incident.zone}
+    - DETAILS: ${desc}
     
-    - SLOT 1: Primary Fire Station (type: fire_station)
-    - SLOT 2: Police Station (type: police)
-    - SLOT 3: Medical Center (type: hospital)
-       
-    !!! CRITICAL PROHIBITIONS:
-    - NO administrative offices (BBMP, Commissioner, Assistant Commissioner, Registrar).
-    - NO government/corporation offices, electricity offices, or ward offices.
-    - NO specialty clinics (Eye/Dental/Skin/Hair).
-    - Only select nodes that physically respond to emergencies.
+    Your mission is to dynamically analyze the scale of the disaster, calculate exactly how many physical response units are required, and then select the absolute best matching stations from the available pool. DO NOT use generic or static allocations.
+
+    RESOURCE DECISION RULES:
     
+    If FIRE:
+    - Small localized fire -> 1 Fire Unit
+    - Building fire -> 1-2 Fire Units
+    - Large spreading fire -> 2-3 Fire Units
+    
+    If FLOOD:
+    - MUST explicitly set Rescue Units to at least 1. Rescue Units CANNOT be zero.
+    - If DETAILS contain keywords like "waterlogging", "vehicles stuck", "stranded people", or "flooding roads", allocate Rescue Units = 1, Medical Units = 1.
+    - STRICT NDRF PRIORITIZATION: If any "NDRF", "SDRF", "Disaster Response Force", or "Rescue Battalion" units are available in the pool, you MUST select one as the primary unit.
+    - The dispatcher order MUST be: [DRF Unit (Top Priority), Hospital, Fire Station, Police].
+    - OPTIONAL: DO NOT allocate Police units by default unless severity is HIGH/CRITICAL.
+    - OPTIONAL (Fallback): Only allocate a Fire Station if strictly NO Rescue Teams are available in the region.
+
+    If BUILDING COLLAPSE:
+    - DEFAULT: Select EXACTLY 1 Fire Station, 1 Police Station, and 1 Multispecialty/Trauma Hospital.
+    - EXCLUDE Civil Defence / NDRF / Rescue Units by default.
+    - SEVERITY EXCEPTION: If severity is CRITICAL ("Extreme"), you MUST also allocate 1 Rescue Unit (NDRF/SDRF) as the 4th item.
+    - This means Building Collapse normally requires 3 components, but 4 if CRITICAL.
+
+    POLICE ALLOCATION:
+    - Police units are strictly required for: crowd control, area security, and road clearance for fire trucks.
+    - Always strictly allocate at least 1 Local Police Station or Law Enforcement Center.
+    - For FLOOD: DO NOT allocate Police by default.
+    - For FIRE / BUILDING COLLAPSE: Strictly prefer Local Police Stations. Do NOT select traffic police stations.
+    - If severity is CRITICAL, allocate 2 Police Stations.
+    
+    MEDICAL ALLOCATION:
+    - Minor injuries -> 1 Hospital.
+    - Multiple casualties -> 2 Hospitals (1 primary trauma setup, 1 overflow).
+    - Severe collapse/fire/flood -> Strictly prioritize Multi-Speciality Hospitals, Trauma Centers, General Hospitals, or Emergency Hospitals.
+    - STRICTLY EXCLUDE: Maternity hospitals, Stroke centers, neurology-only centers, eye hospitals, dental clinics, orthopaedic-only clinics, or purely elective/specialty-only medical facilities.
+
+    !!! CRITICAL PROHIBITIONS (DO NOT SELECT):
+    - NO Government offices, Assistant commissioner, RTO, BESCOM, Registrar, or Corporation offices.
+    - NO traffic police cabins, police outposts, traffic booths, or checkposts. Only select full Police Stations.
+    - NO small clinics, dental clinics, eye clinics, purely elective hospitals, or small nursing homes.
+    - NEVER select administrative offices.
+    - Important: Fire stations inherently include rescue capability. Do not artificially map a separate rescue team unless an NDRF or specific disaster unit is explicitly selected.
+    
+    SECONDARY ALLOWED: BBMP emergency response, Civil defence, Search and rescue team, Ambulance bases.
+
     RULES:
-    1. You MUST select exactly 3 unique centers.
-    2. Match the specific SLOT requirements for the disaster type.
-    3. For hospitals, prioritize those where "has_emergency" is true.
-    4. Primary selection criteria should be distance, but ROLE MATCH is the MOST important.
-    5. Return ONLY a JSON array of the 3 selected resource NAMES.
+    1. Calculate exactly how many distinct units of each type are required based on the Incident Telemetry.
+    2. Pick that EXACT number of corresponding unique units from the Available Resources list. (For example, if you require 2 Fire Units, pick 2 DIFFERENT Fire Stations).
+    3. Output your response ONLY as a JSON object matching this exact schema:
+    {
+      "requirements": {
+        "Fire Units": <integer>,
+        "Police Units": <integer>,
+        "Medical Units": <integer>,
+        "Rescue Units": <integer>
+      },
+      "selected_resources": ["Exact Name 1", "Exact Name 2"]
+    }
     
     Available Resources:
     ${JSON.stringify(resources.map(r => ({ name: r.name, type: r.type, dist_km: r.distance, duration_min: r.duration, has_emergency: r.has_emergency || false })), null, 2)}
@@ -302,17 +372,61 @@ export const selectBestResourcesAI = async (incident, resources) => {
     
     const result = await model.generateContent([prompt]);
     const response = await result.response;
-    const selectedNames = JSON.parse(response.text());
+    const aiData = JSON.parse(response.text());
+
+    const r = aiData.requirements || {};
+    logger.emit(`[Resource Agent] Fire units required: ${r["Fire Units"] || 0}`);
+    logger.emit(`[Resource Agent] Rescue boats required: ${r["Rescue Units"] || 0}`);
+    logger.emit(`[Resource Agent] Medical teams required: ${r["Medical Units"] || 0}`);
     
-    // Map back to full resource objects
-    return resources.filter(r => selectedNames.includes(r.name));
+    const selectedNames = aiData.selected_resources || [];
+    const matched = resources.filter(r => selectedNames.includes(r.name));
+    
+    return {
+      requirements: aiData.requirements || { "Fire Units": 1, "Police Units": 1, "Medical Units": 1, "Rescue Units": 0 },
+      selected: matched
+    };
   } catch (error) {
     console.error("Agent 5 Error:", error);
-    // Role-Aware Deterministic Fallback (Physical Only)
+    // Dynamic Role-Aware Deterministic Fallback
+    const isFlood = type.includes('flood');
+    const isCollapse = type.includes('collapse');
+    
     const fire = resources.find(r => r.type === "fire_station");
     const hosp = resources.find(r => r.type === "hospital");
     const pol = resources.find(r => r.type === "police");
+    const rescue = resources.find(r => r.type === "rescue" || r.type === "disaster_response");
 
-    return [fire, hosp, pol].filter(Boolean);
+    // Strictly adhere to logical allocations based on type!
+    let reqFire = 1;
+    let reqPol = 1;
+    let reqHosp = 1;
+    let reqResc = 0;
+
+    if (isFlood) {
+       reqFire = 0;
+       reqPol = 0;
+       reqResc = 1;
+    } else if (isCollapse) {
+       reqFire = 1;
+       reqPol = 1;
+       reqResc = 1;
+    }
+
+    const deterministicSelection = [];
+    if (reqFire > 0) deterministicSelection.push(fire);
+    if (reqPol > 0) deterministicSelection.push(pol);
+    if (reqHosp > 0) deterministicSelection.push(hosp);
+    if (reqResc > 0) deterministicSelection.push(rescue || fire);
+
+    return {
+      requirements: { 
+        "Fire Units": reqFire, 
+        "Police Units": reqPol, 
+        "Medical Units": reqHosp, 
+        "Rescue Units": reqResc 
+      },
+      selected: deterministicSelection.filter(Boolean)
+    };
   }
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getORSRoute, selectAgentResources } from '../services/rescueFinder';
@@ -12,30 +12,22 @@ import {
   Clock, 
   ShieldAlert, 
   ShieldCheck,
-  AlertTriangle,
   Zap,
-  ChevronRight,
-  TrendingUp
+  TrendingUp,
+  Cpu,
+  Brain,
+  Users
 } from 'lucide-react';
 
-// --- CUSTOM EMOJI MARKERS ---
 const createEmojiIcon = (emoji, color = '#3b82f6') => {
   return L.divIcon({
     html: `
-      <div style="
-        background: ${color}20;
-        border: 2px solid ${color};
-        border-radius: 50%;
-        width: 42px;
-        height: 42px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        box-shadow: 0 0 15px ${color}40;
-        backdrop-filter: blur(4px);
-      ">
-        ${emoji}
+      <div class="relative flex items-center justify-center">
+        <div class="absolute w-12 h-12 rounded-full animate-ping opacity-40" style="background-color: ${color}4d;"></div>
+        <div class="absolute w-10 h-10 border-2 rounded-full animate-[spin_3s_linear_infinite] opacity-20" style="border-color: ${color}; border-top-color: white;"></div>
+        <div style="background: ${color}20; border: 2px solid ${color}; width: 42px; height: 42px;" class="rounded-full flex items-center justify-center text-2xl shadow-[0_0_20px_rgba(0,0,0,0.3)] backdrop-blur-md relative z-10 transition-transform">
+          ${emoji}
+        </div>
       </div>
     `,
     className: 'custom-emoji-marker',
@@ -45,17 +37,14 @@ const createEmojiIcon = (emoji, color = '#3b82f6') => {
 };
 
 const getResourceEmoji = (type) => {
-  if (!type) return '📦';
-  switch (type.toLowerCase()) {
-    case 'hospital': return '🚑';
-    case 'fire_station': return '🚒';
-    case 'police': return '🚓';
-    case 'rescue': return '🚁';
-    default: return '📦';
-  }
+  const t = (type || '').toLowerCase();
+  if (t.includes('hospital')) return '🚑';
+  if (t.includes('fire')) return '🚒';
+  if (t.includes('police')) return '🚓';
+  if (t.includes('rescue')) return '🚁';
+  return '📦';
 };
 
-// --- HELPER COMPONENT TO RECENTER MAP ---
 const RecenterMap = ({ coords }) => {
   const map = useMap();
   useEffect(() => {
@@ -72,68 +61,31 @@ export const TrackingScreen = () => {
   const navigate = useNavigate();
   const state = location.state;
   
-  // 0. Diagnostic Mounting Log
-  useEffect(() => {
-    console.log("Tracking Brain: Component Mounting. State Received:", {
-      hasState: !!state,
-      incident: state?.incident ? "VALID" : "MISSING",
-      resourceCount: state?.resources?.length || 0
-    });
-  }, [state]);
-
-  // Guard for direct access
-  useEffect(() => {
-    if (!state || !state.incident || !state.resources) {
-      console.warn("Tracking Brain: Data Incomplete. Redirecting to home zone.");
-      const timer = setTimeout(() => navigate("/"), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [state, navigate]);
-
   const [incident] = useState(state?.incident);
   const [baseResources] = useState(state?.resources || []);
-  
   const [enrichedResources, setEnrichedResources] = useState([]);
   const [isRanking, setIsRanking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [simulationTime, setSimulationTime] = useState(0);
 
-  // 1. Fetch Routes & Metrics
   useEffect(() => {
     if (!incident || !baseResources.length) return;
-
     const fetchAllData = async () => {
       setLoading(true);
       const enriched = [];
-      
       for (const res of baseResources) {
-        // PROTECTIVE COORDINATE BRIDGE: Handle both nested and flat coordinate formats
         const iLat = Number(incident.coordinates?.lat || incident.lat);
         const iLng = Number(incident.coordinates?.lng || incident.lng);
         const rLat = Number(res.lat);
         const rLng = Number(res.lng);
-
         let route = null;
         try {
-          // Verify we have valid numbers before calling OSR
           if (!isNaN(rLat) && !isNaN(rLng) && !isNaN(iLat) && !isNaN(iLng)) {
-            route = await getORSRoute(
-              { lat: rLat, lng: rLng },
-              { lat: iLat, lng: iLng }
-            );
-          } else {
-            console.warn(`Rescue Brain: Missing coordinates for mission unit ${res.name}. Skipping routing.`);
+            route = await getORSRoute({ lat: rLat, lng: rLng }, { lat: iLat, lng: iLng });
           }
-        } catch (err) {
-          console.warn(`Route Fetch Bypass: ${res.name} (API failure)`, err);
-        }
-        
-        // Push even if route is null, providing defaults for distance/duration
-        // FALLBACK: If route is null, create a direct straight line [start, end]
-        // ONLY create fallback if we have valid numerical coordinates to prevent Leaflet NaN crashes
+        } catch (err) { console.warn("Route Fetch Bypass", err); }
         const hasValidCoords = !isNaN(rLat) && !isNaN(rLng) && !isNaN(iLat) && !isNaN(iLng);
         const fallbackPolyline = hasValidCoords ? [[rLat, rLng], [iLat, iLng]] : null;
-
         enriched.push({
           ...res,
           distance: route ? route.distance.toFixed(1) : (res.distance || "2.5"),
@@ -144,8 +96,6 @@ export const TrackingScreen = () => {
           status: "EN_ROUTE"
         });
       }
-
-      // 2. AI Ranking
       setIsRanking(true);
       try {
         const sortedNames = await rankResourcesByAI(incident, enriched);
@@ -155,360 +105,265 @@ export const TrackingScreen = () => {
           return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
         });
         setEnrichedResources(ranked);
-      } catch (err) {
-        setEnrichedResources(enriched);
-      }
-      
-      setIsRanking(false);
-      setLoading(false);
+      } catch (err) { setEnrichedResources(enriched); }
+      setIsRanking(false); setLoading(false);
     };
-
     fetchAllData();
   }, [incident, baseResources]);
 
-  // 3. Live Simulation (Progress & ETA)
   useEffect(() => {
     if (loading || enrichedResources.length === 0) return;
-
     const interval = setInterval(() => {
       setEnrichedResources(prev => prev.map(res => {
         if (res.progress >= 100) return { ...res, progress: 100, currentEta: 0, status: "ARRIVED" };
-        
-        // Dynamic speed based on distance
-        const step = 100 / (res.duration * 5); // Simulated mission length
+        const step = 100 / (res.duration * 5); 
         const nextProgress = Math.min(res.progress + step, 100);
         const nextEta = Math.max(Math.ceil(res.duration * (1 - nextProgress / 100)), 0);
-        
-        return {
-          ...res,
-          progress: nextProgress,
-          currentEta: nextEta,
-          status: nextProgress >= 100 ? "ARRIVED" : "EN_ROUTE"
-        };
+        return { ...res, progress: nextProgress, currentEta: nextEta, status: nextProgress >= 100 ? "ARRIVED" : "EN_ROUTE" };
       }));
       setSimulationTime(t => t + 1);
     }, 1000);
-
     return () => clearInterval(interval);
   }, [loading, enrichedResources.length]);
 
   if (!state || !state.incident) {
     return (
-      <div className="h-screen w-full bg-[#0A0D12] flex flex-col items-center justify-center font-sans">
+      <div className="h-full w-full bg-[#0A0F1F] flex flex-col items-center justify-center font-sans">
         <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Waiting for mission telemetry...</p>
+        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Establishing Telemetry Link...</p>
       </div>
     );
   }
 
-  const requiredUnits = Array.isArray(selectAgentResources(enrichedResources, incident?.disaster_type || incident?.type)) 
-    ? selectAgentResources(enrichedResources, incident?.disaster_type || incident?.type).map(r => r.name) 
-    : [];
-  
-  // Force Numerical Coordinates ONLY after we know incident exists
-  const centerLat = Number(incident.coordinates?.lat || incident.lat || 12.9716);
-  const centerLng = Number(incident.coordinates?.lng || incident.lng || 77.5946);
+  const centerLat = Number(incident.coordinates?.lat || incident.lat) || 12.9716;
+  const centerLng = Number(incident.coordinates?.lng || incident.lng) || 77.5946;
 
-  // Incident icon with pulse
   const incidentIcon = L.divIcon({
     html: `
       <div class="relative flex items-center justify-center">
-        <div class="absolute w-12 h-12 bg-red-500/30 rounded-full animate-ping"></div>
-        <div class="relative w-10 h-10 bg-red-600 border-2 border-white rounded-full flex items-center justify-center text-xl shadow-xl">
-          🔥
+        <div class="absolute w-16 h-16 bg-red-500/20 rounded-full animate-ping opacity-30"></div>
+        <div class="relative w-12 h-12 bg-red-600 border-2 border-white rounded-full flex items-center justify-center text-2xl shadow-[0_0_25px_rgba(239,68,68,0.5)]">
+          ${incident.disaster_type?.toLowerCase().includes('fire') ? '🔥' : incident.disaster_type?.toLowerCase().includes('flood') ? '🌊' : '🏢'}
         </div>
       </div>
     `,
     className: 'incident-marker',
-    iconSize: [48, 48],
-    iconAnchor: [24, 24],
+    iconSize: [64, 64],
+    iconAnchor: [32, 32],
   });
 
   return (
-    <div className="flex h-screen w-full bg-[#06080A] overflow-hidden text-white font-sans selection:bg-blue-500/30">
+    <div className="w-full h-[calc(100vh-68px)] flex flex-row overflow-hidden bg-[#05070B] font-sans p-4 gap-4 selection:bg-[#00E5FF]/30">
       
-      {/* LEFT PANEL: 440px */}
-      <div className="w-[440px] h-full flex flex-col border-r border-white/5 bg-[#0A0D12]/80 backdrop-blur-3xl z-20 shadow-2xl relative">
-        
-        {/* TOP SECTION: STRATEGIC OVERVIEW */}
-        <div className="p-7 space-y-6 border-b border-white/5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/30">
-                 <ShieldAlert className="text-red-500" size={20} />
+      {/* 1. LEFT SIDEBAR: DISASTER TELEMETRY */}
+      <aside className="w-[400px] h-full flex flex-col bg-[#0B0F17]/50 backdrop-blur-3xl border border-white/[0.06] rounded-[2rem] overflow-hidden shadow-2xl relative flex-shrink-0">
+        <header className="px-6 py-5 border-b border-white/[0.06] bg-[#0B0F17]/80 flex items-center justify-between">
+          <div>
+            <h2 className="text-[10px] font-black text-[#9CA3AF] uppercase tracking-[0.2em] flex items-center gap-2">
+              <ShieldAlert className="text-[#EF4444] animate-pulse" size={12} />
+              Incident Telemetry
+            </h2>
+            <p className="text-[9px] font-bold text-[#9CA3AF] tracking-tighter opacity-40 uppercase">Satellite Uplink Active</p>
+          </div>
+          <div className="flex items-center gap-2 bg-[#EF4444]/10 px-3 py-1 rounded-full border border-[#EF4444]/25">
+             <div className="w-1 h-1 rounded-full bg-[#EF4444] animate-pulse" />
+             <span className="text-[9px] font-black text-[#EF4444] uppercase tracking-tighter">LIVE FEED</span>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto scrollbar-hide p-6 space-y-6">
+          {/* Tactical Identity Card */}
+          <div className="p-6 bg-[#0F1623]/40 border border-white/[0.06] rounded-3xl relative overflow-hidden group shadow-inner">
+            <div className="flex justify-between items-start mb-4">
+              <div className="min-w-0">
+                <p className="text-[9px] text-[#00E5FF] font-black mb-1.5 opacity-50 uppercase tracking-[0.15em] leading-none">Detection Report</p>
+                <h3 className="text-2xl font-black text-[#E6EDF3] capitalize leading-none tracking-tight group-hover:text-[#00E5FF] transition-colors">{incident.disaster_type?.replace('_', ' ')}</h3>
               </div>
-              <div>
-                <h1 className="text-lg font-black tracking-tight uppercase leading-none">Mission Control</h1>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1 text-blue-400">OPS ID: {Math.random().toString(36).substr(2, 6).toUpperCase()}</p>
+              <div className="text-right">
+                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border tracking-widest ${incident.severity_block?.severity === 'CRITICAL' ? 'bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/30' : 'bg-[#DC2626]/10 text-[#DC2626] border-[#DC2626]/30'}`}>
+                  {incident.severity_block?.severity || 'HIGH'}
+                </div>
+                <p className="text-[8px] text-[#9CA3AF] font-bold mt-1.5 uppercase opacity-40">Severity</p>
               </div>
             </div>
-            <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center gap-1.5 ${loading ? 'bg-amber-500/10 text-amber-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-              {loading ? 'Analyzing' : 'Ready'}
+
+            <div className="space-y-4">
+               <div>
+                  <div className="flex justify-between text-[9px] font-black text-[#9CA3AF] mb-2 uppercase tracking-tight opacity-60">
+                     <span>Neural Confidence</span>
+                     <span className="text-[#00E5FF]">{Math.round((incident.confidence || 0.94) * 100)}%</span>
+                  </div>
+                  <div className="h-1 w-full bg-black rounded-full overflow-hidden border border-white/[0.03]">
+                     <div className="h-full bg-gradient-to-r from-[#00E5FF] to-[#7C3AED] shadow-[0_0_10px_rgba(0,229,255,0.3)]" style={{ width: `${(incident.confidence || 0.94) * 100}%` }} />
+                  </div>
+               </div>
             </div>
           </div>
 
-          {/* GLOBAL MISSION PROGRESS */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-end">
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Global progress</p>
-              <p className="text-xs font-black text-blue-400">
-                {Math.round(enrichedResources.reduce((acc, r) => acc + r.progress, 0) / (enrichedResources.length || 1))}%
-              </p>
-            </div>
-            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5 p-[1px]">
-               <div 
-                 className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(37,99,235,0.3)]"
-                 style={{ width: `${enrichedResources.reduce((acc, r) => acc + r.progress, 0) / (enrichedResources.length || 1)}%` }}
-               />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl">
-              <p className="text-[9px] text-gray-500 font-bold uppercase mb-1 tracking-wider">Disaster Type</p>
-              <h3 className="text-sm font-black capitalize text-blue-400">{incident.disaster_type || incident.type}</h3>
-            </div>
-            <div className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl">
-              <p className="text-[9px] text-gray-500 font-bold uppercase mb-1 tracking-wider">Severity</p>
-              <h3 className={`text-sm font-black ${incident.severity === 'CRITICAL' ? 'text-red-500' : 'text-amber-500'}`}>{incident.severity}</h3>
-            </div>
-          </div>
-
-          <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden shadow-2xl">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Assigned Sector</p>
-                <h2 className="text-xl font-black text-white">{incident.zone}</h2>
-              </div>
-              <div className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-[9px] font-black uppercase border border-blue-500/30">
-                {incident.confidence}% Conf
-              </div>
+          {/* Location & Geospatial Card */}
+          <div className="p-5 bg-[#0F1623]/20 border border-white/[0.03] rounded-3xl relative group">
+            <div className="flex items-center gap-4 mb-4">
+               <div className="w-10 h-10 rounded-2xl bg-[#00E5FF]/10 flex items-center justify-center border border-[#00E5FF]/20 shadow-inner group-hover:scale-105 transition-transform"><MapPin className="text-[#00E5FF]" size={18} /></div>
+               <div className="min-w-0">
+                  <p className="text-[9px] text-[#9CA3AF] font-black uppercase tracking-widest leading-none mb-1.5 opacity-40">Verified Sector</p>
+                  <h4 className="text-sm font-black text-[#E6EDF3] truncate leading-none uppercase tracking-tight">{incident.zone}</h4>
+               </div>
             </div>
             
-            <div className="pt-3 border-t border-white/10">
-              <p className="text-[9px] text-slate-500 font-bold uppercase mb-2 text-blue-400 tracking-widest">AI Dispatch Proposal (Agent 3)</p>
-              <div className="flex flex-wrap gap-2 text-white">
-                {(incident.teams || requiredUnits).map(unit => (
-                  <span key={unit} className="px-2 py-1 bg-white/5 text-[9px] font-bold rounded-lg border border-white/10 shadow-sm">
-                    {unit}
-                  </span>
-                ))}
-              </div>
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/[0.03]">
+               <div>
+                  <p className="text-[8px] text-[#9CA3AF] font-black mb-1.5 uppercase tracking-tighter opacity-40">Risk Assessment</p>
+                  <p className="text-[11px] font-black text-[#EF4444] capitalize">{incident.severity_block?.risk_level || 'Extreme'}</p>
+               </div>
+               <div>
+                  <p className="text-[8px] text-[#9CA3AF] font-black mb-1.5 uppercase tracking-tighter opacity-40">Est. Victims</p>
+                  <p className="text-[11px] font-black text-[#E6EDF3] tracking-wider">{incident.severity_block?.estimated_victims || '40-60'}</p>
+               </div>
             </div>
+          </div>
+
+          {/* AI Cognitive Assessment Card */}
+          <div className="p-5 bg-[#0F1623]/20 border border-white/[0.03] rounded-3xl relative overflow-hidden group">
+             <div className="flex items-center gap-2 mb-3">
+                <Brain className="text-[#7C3AED] group-hover:rotate-12 transition-transform" size={14} />
+                <p className="text-[9px] text-[#9CA3AF] font-black uppercase tracking-widest opacity-40">AI Decision Logic</p>
+             </div>
+             <p className="text-[11px] text-[#9CA3AF] font-medium leading-relaxed italic border-l-2 border-[#7C3AED]/30 pl-4">
+                {incident.severity_block?.reasoning || "Autonomous units deployed based on thermal signature and structural stability metrics."}
+             </p>
+          </div>
+
+          {/* Operational Status Card */}
+          <div className="p-5 bg-[#0B0F17]/60 border border-white/[0.06] rounded-3xl shadow-inner relative overflow-hidden">
+             <header className="flex items-center justify-between mb-4 pb-3 border-b border-white/[0.03]">
+                <div className="flex items-center gap-2">
+                   <Zap className="text-[#00E5FF]" size={14} />
+                   <h4 className="text-[10px] font-black text-[#E6EDF3] uppercase tracking-widest">Fleet Telemetry</h4>
+                </div>
+                <div className="text-[8px] font-black text-[#22C55E] flex items-center gap-1.5 uppercase italic"><div className="w-1 h-1 rounded-full bg-[#22C55E] animate-pulse" />Active</div>
+             </header>
+             <div className="space-y-2">
+                <StatusRow label="Assigned Assets" value={`${enrichedResources.length} Units`} />
+                <StatusRow label="Tactical Link" value="ENCRYPTED" color="#00E5FF" />
+                <StatusRow label="Mission Status" value="SEARCH & RESCUE" />
+             </div>
           </div>
         </div>
+      </aside>
 
-        {/* BOTTOM SECTION: MISSION TRACKING */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide px-7 py-6 space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Active Dispatch units</h3>
-              {isRanking && <div className="w-3 h-3 border border-blue-500 border-t-transparent rounded-full animate-spin" />}
-            </div>
-            <TrendingUp size={14} className="text-blue-500" />
+      {/* 2. CENTER PANEL: TACTICAL MAP */}
+      <main className="flex-1 relative bg-[#0B0F17]/30 border border-white/[0.06] rounded-[2rem] overflow-hidden shadow-2xl group">
+        <MapContainer center={[centerLat, centerLng]} zoom={13} className="h-full w-full" zoomControl={false} scrollWheelZoom={true}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png" />
+          <Marker position={[centerLat, centerLng]} icon={incidentIcon} />
+          {enrichedResources.map((res, idx) => (
+            <React.Fragment key={res.name}>
+              <Marker position={[Number(res.lat), Number(res.lng)]} icon={createEmojiIcon(getResourceEmoji(res.type), res.status === 'ARRIVED' ? '#10b981' : '#00E5FF')}>
+                <Tooltip direction="top" offset={[0, -20]} opacity={1} permanent className="custom-tooltip">
+                   <div className="bg-[#0B0F17]/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[9px] font-black text-[#E6EDF3] shadow-xl uppercase tracking-widest">{res.name}</div>
+                </Tooltip>
+              </Marker>
+              {res.polyline && (
+                <Polyline positions={res.polyline} pathOptions={{ color: res.status === 'ARRIVED' ? '#10b981' : '#00E5FF', weight: 4, opacity: 0.6, lineCap: 'round', dashArray: res.status === 'ARRIVED' ? '0' : '8, 12', className: 'route-animate' }} />
+              )}
+            </React.Fragment>
+          ))}
+          {!loading && <RecenterMap coords={[[centerLat, centerLng], ...enrichedResources.map(r => [Number(r.lat), Number(r.lng)])]} />}
+        </MapContainer>
+
+        {/* Floating Intelligence Overlay */}
+        <div className="absolute top-6 right-6 z-[1000] transition-transform duration-500 group-hover:scale-105 pointer-events-none">
+          <div className="bg-[#0B0F17]/80 backdrop-blur-3xl border border-white/[0.1] p-5 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-6 border-l-[#00E5FF] border-l-4 min-w-[340px]">
+             <div className="w-12 h-12 rounded-2xl bg-[#00E5FF]/10 flex items-center justify-center text-[#00E5FF] border border-[#00E5FF]/20 shadow-inner ring-1 ring-white/5"><Navigation size={22} className="animate-pulse" /></div>
+             <div className="flex-1 min-w-0 pr-4">
+               <p className="text-[9px] text-[#9CA3AF] font-black mb-0.5 uppercase opacity-40 tracking-[0.2em] leading-none">Intelligence Sector</p>
+               <p className="text-base font-black text-[#E6EDF3] truncate uppercase tracking-tight">{incident.zone}</p>
+             </div>
+             <div className="pl-6 border-l border-white/[0.06]">
+                <p className="text-[9px] text-[#9CA3AF] font-black mb-0.5 uppercase opacity-40 tracking-[0.2em] leading-none">Security</p>
+                <div className="flex items-center gap-2">
+                   <div className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse shadow-[0_0_10px_#22C55E]" />
+                   <span className="text-[10px] font-black text-[#22C55E] uppercase italic">ENCRYPTED</span>
+                </div>
+             </div>
           </div>
+        </div>
+      </main>
 
+      {/* 3. RIGHT SIDEBAR: ASSET STREAM */}
+      <aside className="w-[400px] h-full flex flex-col bg-[#0B0F17]/50 backdrop-blur-3xl border border-white/[0.06] rounded-[2rem] overflow-hidden shadow-2xl relative flex-shrink-0">
+         <header className="px-6 py-5 border-b border-white/[0.06] bg-[#0B0F17]/80 flex items-center justify-between">
+          <div>
+            <h2 className="text-[10px] font-black text-[#9CA3AF] uppercase tracking-[0.2em] flex items-center gap-2">
+              <Activity className="text-[#00E5FF]" size={12} />
+              Asset Inventory
+            </h2>
+            <p className="text-[9px] font-bold text-[#9CA3AF] tracking-tighter opacity-40 uppercase">Real-time Deployment Stream</p>
+          </div>
+          {isRanking && <div className="w-3 h-3 border-2 border-[#00E5FF] border-t-transparent rounded-full animate-spin" />}
+        </header>
+
+        <div className="flex-1 overflow-y-auto scrollbar-hide p-6 space-y-4">
           {!loading ? enrichedResources.map((res, idx) => (
-            <div key={res.name} className="p-[1px] rounded-2xl bg-gradient-to-br from-white/10 to-transparent shadow-xl group">
-              <div className="p-5 bg-[#0D1117] rounded-[15px] space-y-4 relative overflow-hidden">
-                <div className="flex justify-between items-start">
-                  <div className="flex gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
-                      <Zap size={18} fill={res.status === 'ARRIVED' ? 'currentColor' : 'none'} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-gray-100">{res.name}</h4>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] font-bold text-gray-500 uppercase">{res.type.replace('_', ' ')}</span>
-                        <div className="w-1 h-1 rounded-full bg-gray-700" />
-                        <span className="text-[9px] font-bold text-blue-500/80 uppercase">Priority {idx + 1}</span>
-                      </div>
-                    </div>
+            <div key={res.name} className={`p-5 rounded-3xl border transition-all duration-500 relative overflow-hidden group ${res.status === 'ARRIVED' ? 'bg-[#22C55E]/5 border-[#22C55E]/20 shadow-[0_0_20px_rgba(34,197,94,0.05)]' : 'bg-[#0F1623]/40 border-white/[0.06] hover:bg-[#0F1623]/60 hover:border-[#00E5FF]/20 shadow-inner'}`}>
+              <div className="flex justify-between items-start mb-4 relative z-10">
+                <div className="flex gap-4 min-w-0">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 group-hover:scale-110 ${res.status === 'ARRIVED' ? 'bg-[#22C55E]/10 border-[#22C55E]/20 text-[#22C55E]' : 'bg-black border-white/[0.06] text-[#00E5FF] shadow-inner'}`}>
+                    <span className="text-xl drop-shadow-[0_0_8px_rgba(0,229,255,0.4)]">{getResourceEmoji(res.type)}</span>
                   </div>
-                  <div className="text-right">
-                    <div className={`flex items-center gap-1.5 font-mono font-black text-sm ${res.status === 'ARRIVED' ? 'text-emerald-400' : 'text-blue-400'}`}>
-                      <Clock size={14} />
-                      {res.status === 'ARRIVED' ? '00:00' : `${String(res.currentEta).padStart(2, '0')}:${String(Math.floor(simulationTime % 60)).padStart(2, '0')}`}
-                    </div>
-                    <p className="text-[9px] text-gray-500 font-bold uppercase mt-0.5">EST. Arrival</p>
+                  <div className="min-w-0 flex flex-col justify-center">
+                    <h4 className="text-[13px] font-black text-[#E6EDF3] truncate leading-none mb-1.5 tracking-tight uppercase group-hover:text-[#00E5FF] transition-colors">{res.name}</h4>
+                    <span className="text-[8px] font-black text-[#9CA3AF] uppercase tracking-[0.2em] leading-none opacity-40">{res.type.replace('_', ' ')}</span>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[10px] font-black uppercase">
-                    <span className="text-gray-500">Distance</span>
-                    <span className="text-gray-300">{res.distance} km</span>
+                <div className="text-right">
+                  <div className={`text-xl font-black italic tracking-tighter leading-none ${res.status === 'ARRIVED' ? 'text-[#22C55E] animate-pulse' : 'text-[#00E5FF]'}`}>
+                    {res.status === 'ARRIVED' ? '00:00' : `${String(res.currentEta).padStart(2, '0')}:${String(Math.floor(simulationTime % 60)).padStart(2, '0')}`}
                   </div>
-                  <div className="h-1.5 w-full bg-gray-900 rounded-full border border-white/5 overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-1000 rounded-full bg-gradient-to-r ${res.status === 'ARRIVED' ? 'from-emerald-600 to-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.3)]' : 'from-blue-600 to-indigo-400 shadow-[0_0_10px_rgba(59,130,246,0.3)]'}`}
-                      style={{ width: `${res.progress}%` }}
-                    />
-                  </div>
+                  <p className="text-[8px] text-[#9CA3AF] font-bold mt-1.5 uppercase opacity-40 tracking-widest">ARRIVAL ETA</p>
                 </div>
-                
-                {res.status === 'ARRIVED' ? (
-                  <div className="absolute top-0 right-0 p-2">
-                    <ShieldCheck className="text-emerald-500/30" size={40} strokeWidth={1} />
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-gray-600 uppercase">
-                    <span>En Route</span>
-                    <ChevronRight size={10} />
-                  </div>
-                )}
               </div>
+
+              <div className="space-y-3 relative z-10">
+                <div className="flex justify-between text-[9px] font-black uppercase tracking-[0.2em] transition-all">
+                  <span className="text-[#9CA3AF] opacity-40">{res.distance} KM DIS</span>
+                  <span className={res.status === 'ARRIVED' ? 'text-[#22C55E]' : 'text-[#00E5FF]'}>{Math.round(res.progress)}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-black rounded-full overflow-hidden p-[1.5px] border border-white/[0.03]">
+                   <div className={`h-full transition-all duration-1000 rounded-full ${res.status === 'ARRIVED' ? 'bg-[#22C55E] shadow-[0_0_10px_#22C55E]' : 'bg-gradient-to-r from-[#00E5FF] to-[#7C3AED] shadow-[0_0_10px_rgba(0,229,255,0.3)]'}`} style={{ width: `${res.progress}%` }} />
+                </div>
+              </div>
+              
+              {/* Background Glow Decal */}
+              <div className={`absolute -right-4 -bottom-4 w-24 h-24 rounded-full blur-[40px] opacity-10 transition-opacity duration-700 group-hover:opacity-20 ${res.status === 'ARRIVED' ? 'bg-[#22C55E]' : 'bg-[#00E5FF]'}`} />
             </div>
           )) : (
-            <div className="space-y-4 pt-10">
-               {[1,2,3].map(i => (
-                 <div key={i} className="h-24 w-full rounded-2xl bg-white/5 animate-pulse" />
-               ))}
+            <div className="space-y-5">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-32 w-full rounded-3xl bg-[#0B0F17]/40 animate-pulse border border-white/[0.06]" />
+              ))}
             </div>
           )}
         </div>
-      </div>
-
-      {/* RIGHT SIDE: LEAFLET MAP */}
-      <div className="flex-1 h-full relative z-10">
-        <MapContainer 
-          center={[centerLat, centerLng]} 
-          zoom={13} 
-          className="h-full w-full"
-          zoomControl={false}
-          scrollWheelZoom={true}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png"
-          />
-          
-          {/* INCIDENT MARKER */}
-          <Marker position={[centerLat, centerLng]} icon={incidentIcon}>
-            <Popup className="custom-popup">
-              <div className="p-1 font-sans">
-                <p className="text-[10px] font-black text-red-500 uppercase">Active Incident Zone</p>
-                <p className="text-sm font-bold text-gray-900">{incident.zone}</p>
-              </div>
-            </Popup>
-          </Marker>
-
-          {/* RESOURCE MARKERS & ROUTES */}
-          {enrichedResources.map((res, idx) => {
-            const rLat = Number(res.lat);
-            const rLng = Number(res.lng);
-            
-            // RENDER SAFETY: Final check before attempting Map render
-            if (isNaN(rLat) || isNaN(rLng)) return null;
-
-            return (
-              <React.Fragment key={res.name}>
-                <Marker 
-                  position={[rLat, rLng]} 
-                  icon={createEmojiIcon(getResourceEmoji(res.type), res.status === 'ARRIVED' ? '#10b981' : '#3b82f6')}
-                >
-                  <Popup>
-                    <div className="p-1 font-sans">
-                      <p className="text-[10px] font-black text-blue-500 uppercase">Unit: {res.name}</p>
-                      <p className="text-xs font-medium text-gray-700">Type: {res.type ? res.type.replace('_', ' ') : 'Specialist'}</p>
-                    </div>
-                  </Popup>
-                </Marker>
-                
-                {/* STATIC ROUTE POLYLINE (Final NaN protection) */}
-                {res.polyline && res.polyline.length > 0 && !res.polyline.flat().some(n => isNaN(n)) && (
-                  <Polyline 
-                    positions={res.polyline} 
-                    pathOptions={{ 
-                      color: res.status === 'ARRIVED' ? '#10b981' : (idx === 0 ? '#3b82f6' : '#6366f1'), 
-                      weight: idx === 0 ? 8 : 6, // #1 gets thicker path, others get strong paths
-                      opacity: idx === 0 ? 0.9 : 0.85, // Highly visible routes for all units
-                      lineCap: 'round',
-                      dashArray: res.status === 'ARRIVED' ? '0' : (idx === 0 ? '0' : '10, 15'),
-                      className: idx === 0 ? 'mission-optimal-path' : 'mission-secondary-path'
-                    }} 
-                  >
-                    <Popup>
-                      <div className="text-[10px] font-bold uppercase p-1">
-                        {idx === 0 ? '⭐ AI Optimized Route' : 'Alternative Response Vector'}
-                      </div>
-                    </Popup>
-                  </Polyline>
-                )}
-              </React.Fragment>
-            );
-          })}
-
-          {/* AUTO-CENTER TO FIT ALL ASSETS */}
-          {!loading && <RecenterMap coords={[
-            [centerLat, centerLng],
-            ...enrichedResources.map(r => [Number(r.lat), Number(r.lng)])
-          ]} />}
-        </MapContainer>
-
-        {/* MAP OVERLAY: STATUS UI */}
-        <div className="absolute top-8 right-8 z-[1000] flex flex-col gap-3">
-          <div className="bg-[#0A0D12]/90 backdrop-blur-xl border border-white/10 p-4 rounded-3xl shadow-2xl flex items-center gap-4">
-             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 border border-blue-500/20">
-               <MapPin size={24} />
-             </div>
-             <div>
-               <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest leading-none mb-1">Active Sector</p>
-               <p className="text-sm font-black uppercase tracking-tight text-white">{incident.zone}</p>
-             </div>
-             <div className="ml-4 pl-4 border-l border-white/10">
-                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest leading-none mb-1">Response status</p>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <p className="text-xs font-black text-emerald-500 uppercase">SECURE</p>
-                </div>
-             </div>
-          </div>
-          
-          <div className="bg-[#0A0D12]/90 backdrop-blur-xl border border-white/10 p-4 rounded-3xl shadow-2xl flex items-center justify-between">
-             <div className="flex items-center gap-3">
-               <Activity size={18} className="text-blue-500 animate-pulse" />
-               <p className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">Mission Telemetry Link Active</p>
-             </div>
-          </div>
-        </div>
-      </div>
+      </aside>
 
       <style>{`
-        .leaflet-container {
-          background: #0D1117 !important;
-        }
-        .custom-popup .leaflet-popup-content-wrapper {
-          background: #0D1117;
-          color: #fff;
-          border-radius: 12px;
-          padding: 4px;
-          border: 1px solid rgba(255,255,255,0.1);
-        }
-        .custom-popup .text-gray-900 {
-          color: #fff !important;
-        }
-        .leaflet-popup-tip {
-          background: #0D1117;
-        }
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        @keyframes dash {
-          to {
-            stroke-dashoffset: 0;
-          }
-        }
-        .animate-dash {
-          stroke-dasharray: 10, 15;
-          animation: dash 20s linear infinite;
-        }
+        .leaflet-container { background: #05070B !important; }
+        .custom-tooltip { background: transparent !important; border: none !important; box-shadow: none !important; }
+        .custom-tooltip::before { display: none; }
+        .route-animate { stroke-dashoffset: 100; animation: dash 5s linear infinite; }
+        @keyframes dash { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+        @keyframes flow-glow { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+        .scrollbar-hide::-webkit-scrollbar { display: none; } 
       `}</style>
     </div>
   );
 };
+
+const StatusRow = ({ label, value, color }) => (
+  <div className="flex items-center justify-between px-4 py-2 bg-[#0F1623]/60 rounded-2xl border border-white/[0.06] group hover:border-[#00E5FF]/20 transition-all shadow-inner">
+     <span className="text-[10px] font-black text-[#9CA3AF] tracking-widest uppercase opacity-60">{label}</span>
+     <span className="text-[10px] font-black tracking-widest uppercase" style={{ color: color || '#E6EDF3' }}>{value}</span>
+  </div>
+);
+

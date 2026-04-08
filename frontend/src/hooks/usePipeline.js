@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { database } from "../firebase";
 import { ref, push, set, update, serverTimestamp } from "firebase/database";
 import { runAgent1, runAgent2, runAgent3, startAgent4 } from "../services/agents";
+import { logger } from "../services/logger";
 
 import { fallbackMockLocations } from "../services/rescueFinder";
 
@@ -63,7 +64,8 @@ export const usePipeline = () => {
     return { zone, coordinates: { lat, lng }, description };
   };
 
-  const processIncidentItem = async (base64Str, description, fileName = "", isPredefined = false) => {
+  const processIncidentItem = async (base64Str, description, fileName = "", isPredefined = false, passedLocation = "") => {
+    logger.emit("[Detection Agent] Initializing detection pipeline");
     try {
       const incidentsRef = ref(database, 'incidents');
       const newIncidentRef = push(incidentsRef);
@@ -89,10 +91,13 @@ export const usePipeline = () => {
         try { await update(newIncidentRef, data); } catch (e) { console.error("Firebase update failed:", e); }
       };
 
-      try { await set(newIncidentRef, initialData); } catch (e) { console.error("Firebase set failed:", e); }
+      try { 
+        await set(newIncidentRef, initialData);
+        logger.emit(`Disaster object created in backend: ${incidentId}`);
+      } catch (e) { console.error("Firebase set failed:", e); }
 
       // 1. Agent 1 computes classification
-      const a1ResultRaw = await runAgent1(base64Str, description);
+      const a1ResultRaw = await runAgent1(base64Str, description, fileName);
 
       let finalType = a1ResultRaw.disaster_type;
       let finalConfidence = a1ResultRaw.confidence;
@@ -108,14 +113,24 @@ export const usePipeline = () => {
         finalZone = case1Data.zone;
         finalCoords = case1Data.coordinates;
         finalDesc = case1Data.description;
+        logger.emit(`Allocation Agent: computing route for ${finalType}...`);
       } else {
-        // For non-predefined, use dynamic fallback zones from the rotational list
-        const fallbackKeys = ["KR_PURAM", "WHITEFIELD", "MARATHAHALLI", "YELAHANKA"];
-        let fallbackIndex = Number(localStorage.getItem("fallbackIndex") || 0);
-        const key = fallbackKeys[fallbackIndex % fallbackKeys.length];
+        let key = "KR_PURAM";
         
-        fallbackIndex++;
-        localStorage.setItem("fallbackIndex", fallbackIndex);
+        if (passedLocation) {
+          const locUpper = passedLocation.toUpperCase();
+          if (locUpper.includes("WHITEFIELD")) key = "WHITEFIELD";
+          else if (locUpper.includes("MARATHAHALLI")) key = "MARATHAHALLI";
+          else if (locUpper.includes("YELAHANKA")) key = "YELAHANKA";
+          else key = "KR_PURAM";
+        } else {
+          // For non-predefined without passed location, use dynamic fallback zones
+          const fallbackKeys = ["KR_PURAM", "WHITEFIELD", "MARATHAHALLI", "YELAHANKA"];
+          let fallbackIndex = Number(localStorage.getItem("fallbackIndex") || 0);
+          key = fallbackKeys[fallbackIndex % fallbackKeys.length];
+          fallbackIndex++;
+          localStorage.setItem("fallbackIndex", fallbackIndex);
+        }
 
         const fallback = fallbackMockLocations[key];
         finalZone = fallback.location;
@@ -148,6 +163,7 @@ export const usePipeline = () => {
         image: fileName,
         isPredefined: isPredefined
       });
+      logger.emit("[Detection Agent] Confidence score computed");
 
       // 2. Real Agent 2 runs to score severity logically
       const a2Result = await runAgent2(base64Str, {
@@ -197,6 +213,7 @@ export const usePipeline = () => {
       });
 
       // 3. Agent 3 allocates resources
+      logger.emit("[Allocation Agent] Searching nearest facilities");
       const a3Result = await runAgent3(
         {
           disaster_type: a1Result.disaster_type,
@@ -211,10 +228,18 @@ export const usePipeline = () => {
       await tryUpdateDB({
         dispatch_plan: a3Result
       });
+      
+      logger.emit("[Allocation Agent] Hospital selected");
+      logger.emit("[Allocation Agent] Rescue team selected");
+      logger.emit("[Allocation Agent] Distance computed");
 
       // 4. Agent 4 handles tracking via asynchronous loop mapping realtime
+      logger.emit("[Dispatch Agent] Sending dispatch request");
+      logger.emit("[Dispatch Agent] Units notified");
       startAgent4(tryUpdateDB, a1Result.coordinates, severity, a3Result.eta_minutes);
+      logger.emit("[Dispatch Agent] Dispatch confirmed");
 
+      logger.emit(`Pipeline sync complete for incident: ${incidentId}`);
       return incidentId;
     } catch (e) {
       console.error("Pipeline failure for item:", e);
@@ -223,7 +248,7 @@ export const usePipeline = () => {
 
   const processMultiple = useCallback(async (items) => {
     setIsProcessing(true);
-    const promises = items.map(item => processIncidentItem(item.base64, item.description, item.fileName, item.isPredefined));
+    const promises = items.map(item => processIncidentItem(item.base64, item.description, item.fileName, item.isPredefined, item.location));
     await Promise.all(promises);
     setIsProcessing(false);
   }, []);

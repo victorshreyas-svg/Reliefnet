@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 body {
-  @apply bg-[#0D1117] text-white;
+  @apply bg-[#05070B] text-[#E6EDF3] antialiased selection:bg-[#00E5FF]/20;
 }
 
 /* Ensure nice smooth scrollbars for logs */
@@ -9,12 +9,28 @@ body {
   width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: #0B0F17;
 }
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: #0F1623;
+  border: 1px solid rgba(255,255,255,0.06);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: #1a2335;
+}
+
+@keyframes sos-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 15px rgba(255, 42, 42, 0.4), inset 0 0 5px rgba(255, 42, 42, 0.4); 
+    filter: brightness(1);
+  }
+  50% { 
+    box-shadow: 0 0 35px rgba(255, 42, 42, 0.9), inset 0 0 12px rgba(255, 42, 42, 0.7);
+    filter: brightness(1.2);
+  }
+}
+
+.animate-sos-pulse {
+  animation: sos-pulse 2s infinite ease-in-out;
 }
