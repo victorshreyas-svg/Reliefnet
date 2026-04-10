@@ -1,25 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { UploadScreen } from './components/UploadScreen';
 import { AnalysisScreen } from './components/AnalysisScreen';
 import { DispatchScreen } from './components/DispatchScreen';
 import { TrackingScreen } from './components/TrackingScreen';
+import { CivilianSOS } from './components/CivilianSOS';
 import { usePipeline } from './hooks/usePipeline';
+import { sosBridge } from './services/sosBridge';
 import { getBase64FromUrl, predefinedDisasters } from './services/simulationData';
-import { Play } from 'lucide-react';
+import { runAgent1 } from './services/agents';
+import { Play, UploadCloud } from 'lucide-react';
 import { logger } from './services/logger';
+
+import { persistence, STORAGE_KEYS } from './services/persistence';
 
 function App() {
   const { processMultiple, isProcessing } = usePipeline();
   const navigate = useNavigate();
   const location = useLocation();
-  const [items, setItems] = useState([]);
+  
+  // Initialize from persistence
+  const [items, setItems] = useState(() => persistence.load(STORAGE_KEYS.INCIDENTS, []));
   const [isSimulating, setIsSimulating] = useState(false);
+  const [sessionRestored, setSessionRestored] = useState(false);
 
-  // Derive current page from path for UI header logic
-  const isUpload = location.pathname === '/';
+  // Persistence Save Effect
+  React.useEffect(() => {
+    persistence.save(STORAGE_KEYS.INCIDENTS, items);
+  }, [items]);
 
-  const handleStartSimulation = async () => {
+  // Session Restore Indicator
+  React.useEffect(() => {
+    if (items.length > 0) {
+      setSessionRestored(true);
+      const timer = setTimeout(() => setSessionRestored(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, []); // Only on mount
+
+  // 1. Define handlers first to avoid hoisting/initialization issues
+  const handleStartSimulation = useCallback(async () => {
+    persistence.clear(); // Fresh start
     setIsSimulating(true);
     navigate('/');
     const wait = (ms) => new Promise(res => setTimeout(res, ms));
@@ -48,9 +69,9 @@ function App() {
     
     setItems(loadedItems);
     setIsSimulating(false);
-  };
+  }, [navigate]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (items.length === 0) return;
     
     setTimeout(async () => {
@@ -62,7 +83,123 @@ function App() {
         navigate('/dispatch');
       }, 5000);
     }, 1200);
-  };
+  }, [items, navigate, processMultiple]);
+
+  const handleFilesSelected = useCallback(async (files) => {
+    const newItems = [];
+    
+    for (const file of files) {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve) => {
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsDataURL(file);
+      });
+
+      const tempId = Math.random().toString();
+      const initialItem = {
+        id: tempId,
+        file,
+        fileName: file.name,
+        base64,
+        location: "Calculating coordinates...",
+        description: "Initiating AI visual assessment...",
+        isPredefined: false
+      };
+      
+      setItems(prev => [...prev, initialItem]);
+
+      // Immediate Detection
+      try {
+        const result = await runAgent1(base64, "", file.name);
+        const zones = ["Whitefield", "KR Puram", "Yelahanka", "Marathahalli", "Electronic City", "Jayanagar"];
+        const randomLoc = zones[Math.floor(Math.random() * zones.length)] + ", Bangalore";
+        
+        setItems(prev => prev.map(item => 
+          item.id === tempId ? { 
+            ...item, 
+            location: randomLoc, 
+            description: result.reasoning || result.description || "Analysis ready for pipeline." 
+          } : item
+        ));
+      } catch (err) {
+        console.error("Local detection failed:", err);
+      }
+    }
+  }, []);
+
+  // 2. LISTEN FOR EXTERNAL SOS SIGNALS
+  React.useEffect(() => {
+    const unsub = sosBridge.onSignal(async (signal) => {
+      // 1. Single SOS Alert Transmission
+      if (signal.type === 'SOS_ALERT') {
+        const sosData = signal.data;
+        const newItem = {
+          id: sosData.id || Math.random().toString(),
+          file: null,
+          fileName: sosData.imageAsset || 'external_sos.jpg',
+          base64: sosData.base64,
+          description: sosData.description,
+          location: sosData.location,
+          isPredefined: true
+        };
+        
+        setItems([newItem]);
+        
+        setTimeout(async () => {
+          navigate('/analysis');
+          await processMultiple([newItem]);
+          setTimeout(() => {
+            setItems([]);
+            navigate('/dispatch');
+          }, 5000);
+        }, 500);
+      }
+      
+      // 2. Remote Simulation Trigger
+      if (signal.type === 'TRIGGER_SIMULATION') {
+        logger.emit("Remote simulation trigger received from SOS interface");
+        handleStartSimulation();
+      }
+
+      // 3. Remote Manual Upload
+      if (signal.type === 'MANUAL_UPLOAD') {
+        const uploadData = signal.data;
+        const newItem = {
+          id: uploadData.id || Math.random().toString(),
+          file: null,
+          fileName: uploadData.fileName || 'custom_upload.jpg',
+          base64: uploadData.base64,
+          location: "Analyzing Remote Telemetry...",
+          description: "Initiating AI classification...",
+          isPredefined: false
+        };
+        
+        logger.emit(`External data packet received: ${newItem.fileName}`);
+        setItems(prev => [...prev, newItem]);
+
+        // Immediate Auto-Detection for remote uploads too
+        try {
+           const result = await runAgent1(newItem.base64, "", newItem.fileName);
+           const zones = ["Whitefield", "KR Puram", "Yelahanka", "Marathahalli", "Electronic City"];
+           const randomLoc = zones[Math.floor(Math.random() * zones.length)] + ", Bangalore";
+           
+           setItems(prev => prev.map(item => 
+             item.id === newItem.id ? { 
+               ...item, 
+               location: randomLoc, 
+               description: result.reasoning || result.description || "Analysis complete." 
+             } : item
+           ));
+        } catch (err) {
+           console.error("Remote detection failed:", err);
+        }
+      }
+    });
+    return unsub;
+  }, [navigate, processMultiple, handleStartSimulation]);
+
+  // Derive current page from path for UI header logic
+  const isUpload = location.pathname === '/';
 
   // Determine Pipeline Step
   let currentStep = 0;
@@ -70,89 +207,68 @@ function App() {
   if (location.pathname === '/dispatch') currentStep = 2; // Allocation & Dispatch are same screen
   if (location.pathname === '/tracking') currentStep = 4;
 
-  const PIPELINE_STEPS = ["Upload", "Analysis", "Allocation", "Dispatch", "Tracking"];
+  const PIPELINE_STEPS = ["Intake", "Analysis", "Allocation", "Dispatch", "Tracking"];
 
   return (
-    <div className="min-h-screen bg-[#05070B] text-[#E6EDF3] flex flex-col relative pb-0 transition-colors duration-700">
+    <div className="min-h-screen bg-[#FFFFFF] text-[#111827] flex flex-col relative pb-0">
       
       {/* GLOBAL HEADER */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-[#0B0F17]/80 backdrop-blur-3xl z-50 shadow-[0_0_20px_rgba(0,229,255,0.02)]">
-        <div className="flex items-center space-x-8">
+      <header className="h-[64px] flex items-center justify-between px-8 border-b border-[#E5E7EB] bg-[#FFFFFF] z-50">
+        <div className="flex items-center">
           <h1 
-            className="text-2xl font-black tracking-tighter bg-gradient-to-r from-[#EF4444] to-[#00E5FF] text-transparent bg-clip-text cursor-pointer hover:opacity-80 transition-opacity drop-shadow-[0_0_10px_rgba(0,229,255,0.2)]"
+            className="text-2xl font-black tracking-tighter text-[#111827] cursor-pointer hover:opacity-80 transition-opacity"
             onClick={() => {
+              persistence.clear();
               navigate('/');
               setItems([]);
             }}
           >
-            ReliefNet
+            RELIEFNET
           </h1>
-
-          {/* PIPELINE PROGRESS INDICATOR */}
-          <div className="hidden md:flex items-center space-x-2 bg-[#0F1623]/80 px-4 py-1.5 rounded-full border border-white/[0.06] shadow-inner">
-             {PIPELINE_STEPS.map((step, idx) => {
-                const isActive = location.pathname === '/dispatch' ? idx <= 3 : idx <= currentStep;
-                return (
-                   <React.Fragment key={step}>
-                    <div className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md transition-all duration-500 ${isActive ? 'text-[#00E5FF] bg-[#00E5FF]/10 shadow-[0_0_10px_rgba(0,229,255,0.1)]' : 'text-[#9CA3AF]'}`}>
-                      {step}
-                    </div>
-                    {idx < PIPELINE_STEPS.length - 1 && (
-                      <div className={`h-px w-3 ${isActive ? 'bg-[#00E5FF]/30' : 'bg-white/[0.04]'}`} />
-                    )}
-                  </React.Fragment>
-                );
-             })}
-          </div>
+          {sessionRestored && (
+            <div className="ml-4 flex items-center gap-2 px-3 py-1 bg-[#F0FDF4] border border-[#22C55E]/20 rounded-full animate-in fade-in slide-in-from-left-2 duration-500">
+               <div className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+               <span className="text-[9px] font-black text-[#22C55E] uppercase tracking-widest">Session Restored</span>
+            </div>
+          )}
         </div>
-        
-        {isUpload && (
-          <button
-            onClick={handleStartSimulation}
-            disabled={isSimulating || isProcessing}
-            style={{
-              background: 'linear-gradient(135deg, #3d0000 0%, #2b0000 100%)',
-              borderColor: '#ff2a2a66',
-            }}
-            className="group relative flex items-center justify-center px-8 py-2.5 rounded-md border-[0.5px] transition-all duration-300 active:scale-[0.98] disabled:opacity-30 disabled:grayscale animate-sos-pulse hover:brightness-125"
-          >
-            {/* INSET GLOW EFFECT */}
-            <div className="absolute inset-0 rounded-md shadow-[inset_0_0_15px_rgba(255,42,42,0.3)] pointer-events-none" />
-            
-            {/* METALLIC FINISH OVERLAY */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none" />
 
-            {isSimulating ? (
-              <div className="flex items-center space-x-3">
-                <div className="w-3 h-3 border-2 border-[#ff2a2a] border-t-transparent rounded-full animate-spin" />
-                <span className="text-[#ff2a2a] text-[11px] font-black uppercase tracking-[2px] animate-pulse">Engaging...</span>
-              </div>
-            ) : (
-              <div className="relative flex items-center space-x-3">
-                {/* EMERGENCY INDICATOR LIGHT */}
-                <div className="w-1.5 h-1.5 rounded-full bg-[#ff2a2a] shadow-[0_0_10px_#ff2a2a] animate-pulse" />
-                <span className="text-[#ff2a2a] text-[13px] font-black uppercase tracking-[3px] drop-shadow-[0_0_8px_rgba(255,42,42,0.5)]">
-                  SOS
-                </span>
-              </div>
-            )}
+        {/* CENTER NAVIGATION */}
+        <nav className="hidden lg:flex items-center space-x-8">
+          {PIPELINE_STEPS.map((step, idx) => {
+             const routes = ['/', '/analysis', '/dispatch', '/dispatch', '/tracking'];
+             const isActive = location.pathname === routes[idx] || (location.pathname === '/dispatch' && (idx === 2 || idx === 3));
+             return (
+               <button
+                 key={step}
+                 onClick={() => idx <= 4 && navigate(routes[idx])}
+                 className={`text-[12px] font-bold uppercase tracking-[0.15em] transition-all ${isActive ? 'text-[#EF4444] border-b-2 border-[#EF4444] pb-5 translate-y-[2px]' : 'text-[#6B7280] hover:text-[#111827] pb-5'}`}
+               >
+                 {step}
+               </button>
+             );
+          })}
+        </nav>
 
-            {/* HOVER DANGER LIGHT */}
-            <div className="absolute -inset-[2px] border border-[#ff2a2a]/20 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-          </button>
-        )}
+        {/* STATUS BADGES */}
+        <div className="hidden xl:flex items-center space-x-4">
+           <StatusBadge label="AI ACTIVE" color="#22C55E" />
+           <StatusBadge label="NETWORK ONLINE" color="#3B82F6" />
+           <StatusBadge label="AGENTS READY" color="#6366F1" />
+        </div>
       </header>
 
       <main className="flex-1 overflow-hidden flex flex-col relative">
         <Routes>
           <Route path="/" element={
             <div className="flex-1 flex flex-col w-full h-full overflow-hidden">
-               <UploadScreen 
-                 items={items} 
-                 setItems={setItems} 
-                 onSubmit={handleSubmit} 
-                 isProcessing={isProcessing} 
-               />
+                <UploadScreen 
+                  items={items} 
+                  setItems={setItems} 
+                  onSubmit={handleSubmit} 
+                  onFilesSelected={handleFilesSelected}
+                  isProcessing={isProcessing} 
+                />
             </div>
           } />
           <Route path="/analysis" element={
@@ -170,10 +286,20 @@ function App() {
               <TrackingScreen />
             </div>
           } />
+          <Route path="/sos" element={
+            <CivilianSOS />
+          } />
         </Routes>
       </main>
     </div>
   );
 }
+
+const StatusBadge = ({ label, color }) => (
+  <div className="flex items-center gap-2 px-3 py-1 bg-[#F8FAFC] border border-[#E5E7EB] rounded-full">
+     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+     <span className="text-[9px] font-bold text-[#6B7280] uppercase tracking-widest whitespace-nowrap">{label}</span>
+  </div>
+);
 
 export default App;

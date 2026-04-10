@@ -29,42 +29,42 @@ export const IncidentLogs = () => {
 
   return (
     <div className={clsx(
-      "fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 shadow-2xl transition-all duration-300 z-50",
+      "fixed bottom-0 left-0 right-0 bg-black border-t border-[#1A1A1A] shadow-2xl transition-all duration-300 z-50 font-black",
       isExpanded ? "h-96" : "h-14"
     )}>
       <div 
-        className="h-14 flex items-center justify-between px-6 cursor-pointer hover:bg-gray-800 transition"
+        className="h-14 flex items-center justify-between px-6 cursor-pointer hover:bg-zinc-900 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center space-x-3">
-          <Terminal className="w-5 h-5 text-green-400" />
-          <span className="font-semibold text-gray-200 uppercase tracking-wider text-sm">Real-Time Global State</span>
+        <div className="flex items-center space-x-4">
+          <Terminal className="w-5 h-5 text-[#FF2D2D]" />
+          <span className="text-[10px] text-white uppercase tracking-[0.3em]">Neural State Telemetry</span>
           {Object.keys(incidents).length > 0 && (
-            <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-              {Object.keys(incidents).length} incidents
+            <span className="bg-[#FF2D2D] text-white text-[9px] font-black px-2.5 py-0.5 rounded shadow-[0_0_10px_#FF2D2D]">
+              {Object.keys(incidents).length} NODES ACTIVE
             </span>
           )}
         </div>
-        <span className="text-xs text-gray-500 font-medium">
-          {isExpanded ? "Click to collapse" : "Click to expand"}
+        <span className="text-[9px] text-zinc-600 uppercase tracking-widest font-black">
+          {isExpanded ? "TERMINATE LINK" : "ESTABLISH LINK"}
         </span>
       </div>
 
       <div className={clsx(
-        "p-4 bg-[#0a0f14] overflow-auto h-[calc(100%-3.5rem)] text-sm font-mono relative",
+        "p-6 bg-[#050505] overflow-auto h-[calc(100%-3.5rem)] text-[11px] font-mono relative",
         !isExpanded && "hidden"
       )}>
         <button 
           onClick={handleCopy}
-          className="absolute top-4 right-6 p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 transition"
-          title="Copy JSON"
+          className="absolute top-6 right-8 p-2 bg-black border border-[#1A1A1A] hover:border-[#FF2D2D]/40 rounded text-zinc-600 transition-all"
+          title="Copy RAW Data"
         >
           <Copy className="w-4 h-4" />
         </button>
-        <pre className="text-green-400 whitespace-pre-wrap">
+        <pre className="text-white/80 whitespace-pre-wrap leading-relaxed">
           {Object.keys(incidents).length > 0 
             ? JSON.stringify(incidents, null, 2) 
-            : "// No incidents recorded yet..."
+            : "// MISSION_DATA_EMPTY"
           }
         </pre>
       </div>

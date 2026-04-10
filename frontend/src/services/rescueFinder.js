@@ -382,15 +382,21 @@ export const selectAgentResources = (resources, incidentType, severity = "HIGH")
    * The user requested that NDRF units be prioritized first for floods.
    */
   if (type.includes("flood")) {
-    const drfKeywords = ["ndrf", "sdrf", "disaster response force", "rescue battalion"];
+    const drfKeywords = ["ndrf", "sdrf", "disaster response force", "rescue battalion", "civil defence", "flood rescue"];
     const drfPool = resources.filter(r => 
       drfKeywords.some(kw => r.name.toLowerCase().includes(kw))
     );
 
     if (drfPool.length > 0) {
       const primaryDrf = drfPool.sort((a, b) => {
-        const distA = (a.duration || a.distance || 999);
-        const distB = (b.duration || b.distance || 999);
+        // Prefer NDRF/SDRF over general rescue
+        const nA = a.name.toLowerCase();
+        const nB = b.name.toLowerCase();
+        const aPref = (nA.includes("ndrf") || nA.includes("sdrf")) ? -500 : 0;
+        const bPref = (nB.includes("ndrf") || nB.includes("sdrf")) ? -500 : 0;
+        
+        const distA = (a.duration || a.distance || 999) + aPref;
+        const distB = (b.duration || b.distance || 999) + bPref;
         return distA - distB;
       })[0];
       
@@ -495,7 +501,7 @@ export const getORSRoute = async (start, end) => {
 export const getAgentResources = (incident) => {
   const type = (incident.disaster_type || "").toLowerCase();
 
-  if (type.includes("flood")) return ["Rescue Team", "Medical Unit", "Logistics Support"];
+  if (type.includes("flood")) return ["Specialized Evacuation (NDRF/SDRF)", "Rescue Boats", "Medical Unit", "Logistics Support"];
   if (type.includes("collapse")) return ["Urban Search & Rescue", "Trauma Unit", "K9 Search Unit"];
   if (type.includes("fire")) return ["Fire Suppression Unit", "Medical Paramedics", "Hazmat Team"];
 

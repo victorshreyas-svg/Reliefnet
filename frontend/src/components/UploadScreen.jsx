@@ -1,265 +1,235 @@
-import React, { useRef, useEffect } from "react";
-import { UploadCloud, X, Send, Activity, CheckCircle, Circle, Cpu, Terminal } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { X, Activity, Send, Cpu, UploadCloud, MapPin as MapPinIcon, ShieldCheck, Zap } from "lucide-react";
 import clsx from "clsx";
-import { runAgent1 } from "../services/agents";
 import { logger } from "../services/logger";
 import { TerminalLogViewer } from "./TerminalLogViewer";
 
-export const UploadScreen = ({ items, setItems, onSubmit, isProcessing }) => {
+const getDisasterDisplayName = (item) => {
+  const name = (item.fileName || '').toLowerCase();
+  const type = (item.disaster_type || '').toLowerCase();
+
+  if (type.includes('fire') || name.includes('fire')) return { label: 'FIRE INCIDENT', icon: '🔥' };
+  if (type.includes('flood') || name.includes('flood')) return { label: 'FLOOD DISASTER', icon: '🌊' };
+  if (type.includes('collapse') || name.includes('collapse')) return { label: 'BUILDING COLLAPSE', icon: '🏚' };
+  return { label: 'EMERGENCY SIGNAL', icon: '⚠️' };
+};
+
+import { persistence, STORAGE_KEYS } from "../services/persistence";
+
+export const UploadScreen = ({ items, setItems, onSubmit, onFilesSelected, isProcessing }) => {
   const fileInputRef = useRef(null);
+  const [selectedId, setSelectedId] = useState(() => persistence.load(STORAGE_KEYS.SELECTED_ID, null));
+
+  // Persistence Save Effect
+  useEffect(() => {
+    persistence.save(STORAGE_KEYS.SELECTED_ID, selectedId);
+  }, [selectedId]);
+
+  // Auto-selection of first item (only if none selected and items exist)
+  useEffect(() => {
+    if (items.length > 0 && !selectedId) {
+      setSelectedId(items[0].id);
+    }
+  }, [items, selectedId]);
 
   useEffect(() => {
     const sequences = [
-      { msg: "ReliefNet core initializing...", prefix: "BOOT", delay: 100 },
-      { msg: "Loading AI intelligence modules...", prefix: "BOOT", delay: 400 },
-      { msg: "All 5 Intelligence Agents READY", prefix: "INIT", delay: 800 },
-      { msg: "Neural telemetry link stable", prefix: "PIPELINE", delay: 1200 },
-      { msg: "Awaiting incident upload...", prefix: "SYSTEM", delay: 1800 },
+      { msg: "ReliefNet Command Center initializing...", prefix: "BOOT", delay: 100 },
+      { msg: "Connecting to Global Emergency Feeds...", prefix: "LINK", delay: 400 },
+      { msg: "Intelligence Pipeline: ONLINE", prefix: "SYSTEM", delay: 800 },
+      { msg: "Monitoring for incoming SOS signals...", prefix: "READY", delay: 1200 },
     ];
-
     sequences.forEach(s => {
       setTimeout(() => logger.emit(s.msg, s.prefix), s.delay);
     });
   }, []);
 
-  const handleFileChange = (e) => {
-    const files = Array.from(e.target.files);
-    processFiles(files);
+  const removeItem = (e, id) => {
+    e.stopPropagation();
+    setItems(prev => prev.filter(item => item.id !== id));
+    if (selectedId === id) setSelectedId(null);
   };
 
-  const processFiles = (files) => {
-    let validFiles = files.filter(f => f.type.startsWith("image/"));
-    if (items.length + validFiles.length > 3) {
-      alert("You can only upload up to 3 images.");
-      validFiles = validFiles.slice(0, 3 - items.length);
-    }
-
-    validFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = e.target.result;
-        const tempId = Math.random().toString();
-        
-        setItems(prev => [...prev, { 
-          id: tempId, 
-          file, 
-          base64, 
-          fileName: file.name,
-          location: "Analyzing location...",
-          description: "Generating AI classification..."
-        }]);
-
-        try {
-          const a1ResultRaw = await runAgent1(base64, "", file.name);
-          const aiType = a1ResultRaw.disaster_type;
-          
-          const zones = ["Whitefield", "KR Puram", "Yelahanka", "Marathahalli"];
-          const location = zones[Math.floor(Math.random() * zones.length)] + ", Bangalore";
-          
-          let description = "Incident reported. Awaiting further analysis.";
-          if (aiType === "flood") description = "Urban flooding reported. Roads submerged. Traffic disruption observed.";
-          else if (aiType === "fire") description = "Active fire reported in building. Smoke visible. Emergency response required.";
-          else if (["building_collapse", "earthquake", "landslide"].includes(aiType)) description = "Structural collapse detected. Possible casualties. Rescue teams required.";
-          
-          setItems(prev => prev.map(item => 
-            item.id === tempId ? { ...item, location, description } : item
-          ));
-        } catch (error) {
-          console.error("Agent 1 preview error:", error);
-          setItems(prev => prev.map(item => 
-            item.id === tempId ? { ...item, location: "Unknown Location", description: "Manual upload. Pending pipeline analysis." } : item
-          ));
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+  const handleFileChange = (e) => {
+    if (e.target.files) onFilesSelected(Array.from(e.target.files));
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    processFiles(Array.from(e.dataTransfer.files));
+    if (e.dataTransfer.files) onFilesSelected(Array.from(e.dataTransfer.files));
   };
 
-  const removeItem = (id) => {
-    setItems(prev => prev.filter(item => item.id !== id));
-  };
-
+  const selectedItem = items.find(it => it.id === selectedId) || null;
 
   return (
-    <div className="w-full h-full flex flex-col p-6 animate-in fade-in duration-500 bg-[#05070B] font-sans overflow-hidden">
+    <div className="w-full h-[calc(100vh-64px)] grid grid-cols-[380px_1fr_380px] bg-[#FFFFFF] font-sans overflow-hidden">
       
-      {/* HEADER & AGENT INDICATOR */}
-      <div className="flex justify-between items-center mb-8 pl-4 pr-4">
-        <div>
-           <h2 className="text-2xl font-black text-[#E6EDF3] tracking-tighter uppercase mb-1">Initialize Incident Data</h2>
-           <p className="text-[10px] text-[#9CA3AF] font-black opacity-40 tracking-[0.2em]">MISSION CONTROL CENTER • LIVE DATA UPLINK</p>
-        </div>
-        <div className="flex items-center gap-3 px-4 py-2 bg-[#00E5FF]/5 border border-[#00E5FF]/20 rounded-full shadow-[0_0_15px_rgba(0,229,255,0.05)] transition-all">
-          <Activity size={16} className="text-[#00E5FF] animate-pulse" />
-          <span className="text-[10px] font-black text-[#00E5FF] uppercase tracking-[0.2em]">Agent Running</span>
+      {/* 1. LEFT PANEL: INCOMING INCIDENTS */}
+      <div className="flex flex-col h-full border-r border-[#E5E7EB] bg-[#FFFFFF] overflow-hidden">
+        <header className="px-6 py-5 border-b border-[#E5E7EB] flex items-center justify-between bg-white z-10">
+          <h2 className="text-[11px] font-bold text-[#111827] uppercase tracking-[0.2em]">Incoming Incidents</h2>
+          <span className="text-[10px] font-bold text-[#6B7280] bg-[#F8FAFC] px-2 py-0.5 rounded border border-[#E5E7EB]">
+            {items.length} ACTIVE
+          </span>
+        </header>
+
+        <div className="flex-1 p-6 space-y-3 overflow-y-auto scrollbar-hide pb-20 bg-[#F1F5F9]">
+          {items.length === 0 ? (
+            <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-[#E5E7EB] rounded-2xl mx-1 bg-white/50">
+               <Activity className="animate-pulse mb-4 text-[#6B7280]" size={32} />
+               <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">Monitoring Signals...</p>
+            </div>
+          ) : items.map((item) => {
+            const { label, icon } = getDisasterDisplayName(item);
+            return (
+              <div 
+                key={item.id} 
+                onClick={() => setSelectedId(item.id)}
+                className={clsx(
+                  "group p-4 rounded-xl transition-all cursor-pointer border",
+                  selectedId === item.id 
+                    ? "bg-white border-[#E5E7EB] border-l-4 border-l-[#EF4444] soft-shadow scale-[1.02]" 
+                    : "bg-[#F1F5F9] border-transparent hover:bg-white/60"
+                )}
+              >
+                 <div className="flex gap-4">
+                    <div className="w-16 h-16 rounded-lg bg-white border border-[#E5E7EB] overflow-hidden flex-shrink-0">
+                       <img src={item.base64} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="intake" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                       <div className="flex justify-between items-start mb-1">
+                          <h4 className="text-[10px] font-black text-[#111827] uppercase truncate tracking-tight">{icon} {label}</h4>
+                          <button onClick={(e) => removeItem(e, item.id)} className="text-[#6B7280] hover:text-[#EF4444] transition-colors"><X size={12}/></button>
+                       </div>
+                       <p className="text-[9px] text-[#6B7280] font-bold uppercase tracking-widest leading-none mb-2 truncate">{item.location}</p>
+                       <div className="flex items-center gap-2">
+                          <span className="text-[7px] font-bold text-[#EF4444] bg-[#FEE2E2] px-1.5 py-0.5 rounded uppercase tracking-widest border border-[#EF4444]/20">RECEIVED</span>
+                          <span className="text-[7px] font-bold text-[#6B7280] uppercase tracking-widest opacity-40">MOBILE APP</span>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
+      {/* 2. CENTER PANEL: INTELLIGENCE PREVIEW */}
+      <div className="flex flex-col h-full bg-[#FFFFFF] overflow-hidden relative">
+         <header className="px-8 py-5 border-b border-[#E5E7EB] flex items-center justify-between">
+            <h2 className="text-[11px] font-bold text-[#111827] uppercase tracking-[0.2em]">Intelligence Preview</h2>
+            <div className="flex items-center gap-2">
+               <span className="text-[9px] font-bold text-[#6B7280] uppercase tracking-widest italic opacity-60">Command Center Link Active</span>
+            </div>
+         </header>
 
-      {/* MAIN 3-COLUMN CONTENT */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 w-full px-6 overflow-hidden">
-        
-        {/* LEFT COLUMN: UPLOAD */}
-        <div className="flex flex-col min-h-0 space-y-6">
-          <div
-            className={clsx(
-              "border rounded-3xl p-10 flex flex-col items-center justify-center transition-all cursor-pointer shadow-2xl group border-white/[0.06] bg-[#0F1623]/40 backdrop-blur-md hover:bg-[#0F1623]/60 hover:border-[#00E5FF]/30 h-full",
-              items.length >= 3 && "opacity-50 pointer-events-none grayscale"
-            )}
+         <div className="hidden">
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple hidden />
+         </div>
+
+         <div 
+            className="flex-1 p-10 overflow-y-auto scrollbar-hide flex flex-col items-center"
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
-            onClick={() => items.length < 3 && fileInputRef.current?.click()}
-          >
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-[#00E5FF] blur-3xl opacity-10 group-hover:opacity-30 transition-opacity" />
-              <UploadCloud className="w-16 h-16 text-[#00E5FF] group-hover:scale-110 transition-transform relative z-10" />
-            </div>
-            <h3 className="text-[#E6EDF3] text-lg font-black tracking-tight uppercase">Transmit Spatial Imagery</h3>
-            <p className="text-[10px] text-[#9CA3AF] mt-2 font-bold tracking-[0.1em] opacity-60">Click or drag & drop • Max 3 images</p>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-            />
-          </div>
+         >
+            {!selectedItem ? (
+               <div className="h-full flex flex-col items-center justify-center text-center space-y-6 max-w-sm">
+                  <div className="w-20 h-20 mx-auto rounded-full bg-[#F8FAFC] border border-[#E5E7EB] flex items-center justify-center">
+                     <Activity size={32} className="text-[#E5E7EB] animate-pulse" />
+                  </div>
+                  <div className="space-y-2">
+                     <h3 className="text-sm font-bold text-[#6B7280] uppercase tracking-[0.3em]">Sector Monitoring</h3>
+                     <p className="text-xs text-[#6B7280] font-medium leading-relaxed italic opacity-60">"Waiting for incoming emergency signal from regional telemetry nodes..."</p>
+                  </div>
+               </div>
+            ) : (
+               <div key={selectedId} className="w-full space-y-10 animate-in fade-in slide-in-from-right-4 duration-700">
+                  <div className="aspect-video bg-[#F1F5F9] rounded-[48px] border border-[#E5E7EB] overflow-hidden soft-shadow relative group">
+                     <img src={selectedItem.base64} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[6000ms]" alt="preview" />
+                     <div className="absolute inset-x-0 bottom-0 p-12 bg-gradient-to-t from-white via-white/40 to-transparent">
+                        <div className="flex items-center gap-3 mb-2">
+                           <span className="text-[10px] font-black text-[#EF4444] uppercase tracking-[0.4em]">Operational Target</span>
+                        </div>
+                        <h3 className="text-4xl font-black text-[#111827] uppercase tracking-tighter mb-1">
+                           {getDisasterDisplayName(selectedItem).icon} {getDisasterDisplayName(selectedItem).label}
+                        </h3>
+                        <p className="text-sm font-bold text-[#6B7280] tracking-[0.1em] uppercase">{selectedItem.location}</p>
+                     </div>
+                  </div>
 
-          <div className="space-y-4">
-            <button
-              disabled={isProcessing || items.length === 0}
-              onClick={onSubmit}
-              className="w-full group relative flex items-center justify-center space-x-4 bg-[#0B0F17] hover:bg-[#0F1623] text-[#00E5FF] py-5 rounded-2xl font-black border border-[#00E5FF]/20 shadow-[0_0_30px_rgba(0,229,255,0.05)] disabled:opacity-20 disabled:grayscale transition-all overflow-hidden"
-            >
-              {/* Animated Glow Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-r from-[#EF4444]/0 via-[#00E5FF]/5 to-[#EF4444]/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-              
-              {isProcessing ? (
-                <span className="animate-pulse flex items-center gap-3 uppercase text-[11px] tracking-[0.3em]">
-                  <Activity size={18} className="animate-spin text-[#EF4444]" />
-                  Processing Vectors...
-                </span>
-              ) : (
-                <>
-                  <Activity size={18} className="text-[#EF4444] group-hover:scale-110 transition-transform" />
-                  <span className="uppercase text-[11px] tracking-[0.3em]">Start Analysing</span>
-                  <Send size={16} className="opacity-40 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                </>
-              )}
-            </button>
-            <div className="flex items-center gap-2 px-4 py-3 bg-[#0F1623]/60 rounded-xl border border-white/[0.06]">
-              <div className={clsx("w-1.5 h-1.5 rounded-full shadow-[0_0_5px_currentColor]", items.length > 0 ? "text-[#22C55E] bg-[#22C55E]" : "text-gray-600 bg-gray-600")} />
-              <p className="text-[10px] font-black text-[#9CA3AF] tracking-[0.1em] uppercase">
-                {items.length === 0 ? "WAITING FOR DATA PACKETS" : `READY: ${items.length} DISASTER ASSETS PREPARED`}
-              </p>
-            </div>
-          </div>
-        </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 px-4">
+                     <InfoDetail label="Status" value="RECEIVED" color="#EF4444" />
+                     <InfoDetail label="Time" value={new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} color="#111827" />
+                     <InfoDetail label="Source" value="Mobile App" color="#3B82F6" />
+                     <InfoDetail label="Confidence" value="98.4%" color="#22C55E" />
+                  </div>
 
-        {/* CENTER COLUMN: DETECTED INCIDENTS */}
-        <div className="flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-4 border-b border-white/[0.06] pb-3">
-             <div className="flex items-center gap-3">
-                <Cpu size={16} className="text-[#00E5FF] opacity-50" />
-                <h3 className="text-[10px] font-black text-[#9CA3AF] uppercase tracking-[0.2em]">Detected Incidents</h3>
-             </div>
-             <span className="text-[9px] font-black text-[#9CA3AF] bg-white/[0.04] px-2 py-0.5 rounded-md border border-white/[0.06]">{items.length} FOUND</span>
-          </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full px-4">
+                     <StatusCard 
+                        icon={<Send size={18} />} 
+                        label="INCIDENT SOURCE" 
+                        value="VERIFIED MOBILE APP" 
+                     />
+                     <StatusCard 
+                        icon={<Activity size={18} />} 
+                        label="SIGNAL STATUS" 
+                        value="ACTIVE CONNECTION" 
+                     />
+                     <StatusCard 
+                        icon={<Cpu size={18} />} 
+                        label="AI STATUS" 
+                        value="READY FOR ANALYSIS" 
+                     />
+                  </div>
+               </div>
+            )}
+         </div>
+      </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4 pr-1">
-            {items.length === 0 ? (
-              <div className="h-48 border border-white/5 border-dashed rounded-3xl flex flex-col items-center justify-center text-gray-600">
-                <p className="text-xs font-bold uppercase tracking-widest">No active detections</p>
-              </div>
-            ) : items.map((item) => {
-              const isFire = item.description.toLowerCase().includes("fire");
-              const isFlood = item.description.toLowerCase().includes("flood");
-              const isCollapse = ["building_collapse", "collapse", "earthquake", "landslide"].some(d => item.description.toLowerCase().includes(d.replace('_', ' ')) || item.description.toLowerCase().includes(d));
-              
-              const disasterLabel = isFire ? "Fire Disaster" : isFlood ? "Flood Disaster" : isCollapse ? "Collapse Disaster" : "Active Disaster";
-              const severity = isCollapse ? "CRITICAL" : isFire ? "HIGH" : "MODERATE";
-              const severityColor = severity === "CRITICAL" ? "text-[#EF4444] bg-[#EF4444]/10 border-[#EF4444]/20" : severity === "HIGH" ? "text-amber-500 bg-amber-500/10 border-amber-500/20" : "text-[#00E5FF] bg-[#00E5FF]/10 border-[#00E5FF]/20";
-              const confidence = item.location === "Analyzing location..." ? "..." : (Math.floor(Math.random() * 15) + 85) + "%";
+      {/* 3. RIGHT PANEL: AI RESPONSE PIPELINE */}
+      <div className="flex flex-col h-full border-l border-[#E5E7EB] bg-[#FFFFFF] overflow-hidden">
+         <header className="px-6 py-5 border-b border-[#E5E7EB] flex items-center justify-between bg-white z-10">
+            <h2 className="text-[11px] font-bold text-[#111827] uppercase tracking-[0.2em]">AI Response Pipeline</h2>
+         </header>
 
-              return (
-                <div key={item.id} className="group relative bg-[#0F1623]/40 backdrop-blur-xl rounded-2xl border border-white/[0.06] p-4 flex gap-4 transition-all hover:border-[#00E5FF]/30 hover:bg-[#0F1623]/60">
-                   <div className="w-[100px] h-[100px] rounded-xl overflow-hidden bg-black flex-shrink-0 border border-white/[0.06] group-hover:border-[#00E5FF]/30 transition-colors">
-                      <img src={item.base64} alt="incident" className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
-                   </div>
-                   <div className="flex-1 min-w-0 flex flex-col">
-                      <div className="flex justify-between items-start mb-2">
-                         <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                               <span className={clsx("px-2 py-0.5 rounded-md text-[8px] font-black border uppercase tracking-tighter", severityColor)}>
-                                 {severity}
-                               </span>
-                               <span className="text-[9px] font-black text-[#00E5FF] bg-[#00E5FF]/10 px-2 py-0.5 rounded-md border border-[#00E5FF]/20">
-                                 {confidence} MATCH
-                               </span>
-                            </div>
-                            <h4 className="text-[15px] font-black text-[#E6EDF3] tracking-tight truncate uppercase leading-none">{disasterLabel}</h4>
-                         </div>
-                         <button
-                           onClick={() => removeItem(item.id)}
-                           className="p-1.5 hover:bg-[#EF4444]/20 hover:text-[#EF4444] rounded-lg text-gray-700 transition-colors"
-                         >
-                           <X size={14} />
-                         </button>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 mb-2">
-                         <MapPin size={10} className="text-[#00E5FF] opacity-60" />
-                         <span className="text-[11px] font-bold text-[#9CA3AF] truncate leading-none">{item.location}</span>
-                      </div>
-
-                      <p className="text-[11px] text-[#9CA3AF] leading-tight line-clamp-2 italic opacity-60 font-medium">
-                        {item.description}
-                      </p>
-                   </div>
+         <div className="flex-1 p-6 space-y-8 overflow-y-auto scrollbar-hide">
+             <div className="space-y-4">
+                <h4 className="text-[9px] font-bold text-[#6B7280] uppercase tracking-widest px-1">Tactical Analysis Stream</h4>
+                <div className="rounded-xl overflow-hidden border border-[#E5E7EB] bg-[#FFFFFF] p-1">
+                  <TerminalLogViewer />
                 </div>
-              );
-            })}
-          </div>
-        </div>
+             </div>
 
-        {/* RIGHT COLUMN: LIVE BACKEND TERMINAL */}
-        <div className="flex flex-col min-h-0">
-          <TerminalLogViewer />
-        </div>
-
+             <div className="pt-6 border-t border-[#E5E7EB]">
+                <button
+                  disabled={isProcessing || items.length === 0}
+                  onClick={onSubmit}
+                  className="w-full relative py-6 bg-[#EF4444] rounded-2xl text-white font-bold uppercase text-xs tracking-[0.3em] overflow-hidden transition-all hover:bg-[#DC2626] active:scale-[0.98] disabled:opacity-20 soft-shadow"
+                >
+                  {isProcessing ? "ANALYZING TACTICAL DATA..." : "START ANALYSIS"}
+                </button>
+             </div>
+         </div>
       </div>
-      
-      {/* GLOBAL BACKGROUND EFFECTS */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#EF4444]/5 blur-[120px] rounded-full" />
-        <div className="absolute top-[10%] right-[-10%] w-[400px] h-[400px] bg-[#00E5FF]/5 blur-[100px] rounded-full" />
-      </div>
-
     </div>
   );
 };
 
-// Re-import MapPin as it was missing in my internal check
-const MapPin = ({ size, className }) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    width={size} 
-    height={size} 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
-    className={className}
-  >
-    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-    <circle cx="12" cy="10" r="3" />
-  </svg>
+const InfoDetail = ({ label, value, color }) => (
+   <div className="space-y-1">
+      <p className="text-[9px] font-bold text-[#6B7280] uppercase tracking-widest">{label}</p>
+      <p className="text-[14px] font-black uppercase tracking-tight" style={{ color }}>{value}</p>
+   </div>
+);
+
+const StatusCard = ({ icon, label, value }) => (
+   <div className="p-6 bg-[#F8FAFC] border border-[#E5E7EB] rounded-[32px] flex items-center gap-5 soft-shadow transition-transform hover:scale-[1.02]">
+      <div className="w-12 h-12 rounded-2xl bg-white border border-[#E5E7EB] flex items-center justify-center text-[#3B82F6] shadow-sm">
+         {icon}
+      </div>
+      <div className="min-w-0">
+         <p className="text-[9px] font-bold text-[#6B7280] uppercase tracking-[0.2em] mb-1">{label}</p>
+         <p className="text-[11px] font-black text-[#111827] uppercase tracking-tight truncate">{value}</p>
+      </div>
+   </div>
 );

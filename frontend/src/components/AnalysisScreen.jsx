@@ -2,8 +2,9 @@ import React, { useEffect, useState, useRef } from "react";
 import { database } from "../firebase";
 import { ref, onValue } from "firebase/database";
 import autoAnimate from '@formkit/auto-animate';
-import { Target, Zap, Radio, Cpu } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { TerminalLogViewer } from "./TerminalLogViewer";
+import { runPriorityReasoningAgent } from "../services/agents";
 
 const PRIORITY_ORDER = {
   "CRITICAL": 1,
@@ -13,266 +14,239 @@ const PRIORITY_ORDER = {
   "PENDING": 5
 };
 
-const getSeverityColor = (severity) => {
-  switch (severity) {
-    case 'CRITICAL': return 'bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/30';
-    case 'HIGH': return 'bg-[#DC2626]/10 text-[#DC2626] border border-[#DC2626]/30';
-    case 'MEDIUM': return 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30';
-    case 'LOW': return 'bg-[#22C55E]/10 text-[#22C55E] border border-[#22C55E]/30';
-    default: return 'bg-white/5 text-gray-400 border border-white/10';
-  }
+const DISASTER_THEMES = {
+  fire: { color: "#EF4444", icon: "🔥", tint: "#FEF2F2", label: "FIRE INCIDENT" },
+  flood: { color: "#3B82F6", icon: "🌊", tint: "#EFF6FF", label: "FLOOD DISASTER" },
+  building_collapse: { color: "#F59E0B", icon: "🏚", tint: "#FFFBEB", label: "BUILDING COLLAPSE" },
+  earthquake: { color: "#8B5CF6", icon: "🌏", tint: "#F5F3FF", label: "EARTHQUAKE" },
+  landslide: { color: "#78350F", icon: "⛰", tint: "#FDF8F6", label: "LANDSLIDE" },
+  default: { color: "#6B7280", icon: "⚠️", tint: "#F8FAFC", label: "EMERGENCY SIGNAL" }
 };
+
+import { persistence, STORAGE_KEYS } from "../services/persistence";
 
 export const AnalysisScreen = ({ onNavigate }) => {
   const [incidents, setIncidents] = useState({});
+  const [priorityReasoning, setPriorityReasoning] = useState(() => persistence.load(STORAGE_KEYS.ANALYSIS, {}));
   const listRefFeed = useRef(null);
-  const listRefPriority = useRef(null);
+
+  // Persistence Save Effect
+  useEffect(() => {
+    persistence.save(STORAGE_KEYS.ANALYSIS, priorityReasoning);
+  }, [priorityReasoning]);
 
   useEffect(() => {
     listRefFeed.current && autoAnimate(listRefFeed.current);
-    listRefPriority.current && autoAnimate(listRefPriority.current);
   }, []);
 
   useEffect(() => {
     const incidentsRef = ref(database, 'incidents');
     const unsubscribe = onValue(incidentsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setIncidents(snapshot.val());
-      } else {
-        setIncidents({});
-      }
+      if (snapshot.exists()) setIncidents(snapshot.val());
+      else setIncidents({});
     });
     return () => unsubscribe();
   }, []);
 
-  // Use a single source of truth for both panels to ensure rank consistency
-  const sortedIncidents = Object.values(incidents).sort((a, b) => {
+  useEffect(() => {
+    const allIncidents = Object.values(incidents);
+    allIncidents.forEach(async (incident) => {
+      if (incident.id && !priorityReasoning[incident.id] && incident.severity_block?.priority_score) {
+        try {
+          const res = await runPriorityReasoningAgent(incident);
+          setPriorityReasoning(prev => ({ ...prev, [incident.id]: res }));
+        } catch (err) { console.error("Reasoning error:", err); }
+      }
+    });
+  }, [incidents, priorityReasoning]);
+
+  const allSortedIncidents = Object.values(incidents).sort((a, b) => {
     const pA = a.severity_block?.severity || "PENDING";
     const pB = b.severity_block?.severity || "PENDING";
     const diff = PRIORITY_ORDER[pA] - PRIORITY_ORDER[pB];
     if (diff === 0) return b.timestamp - a.timestamp;
     return diff;
-  }).slice(0, 3);
+  });
 
   return (
-    <div className="w-full h-[calc(100vh-68px)] flex flex-row overflow-hidden bg-[#05070B] font-sans p-4 gap-[14px]">
+    <div className="w-full h-[calc(100vh-64px)] grid grid-cols-[450px_1fr_400px] bg-[#FFFFFF] font-sans overflow-hidden">
       
-      {/* 1. LEFT PANEL: INCIDENT ANALYSIS (42%) */}
-      <div className="w-[42%] flex flex-col h-full bg-[#0B0F17]/50 rounded-2xl border border-white/[0.06] overflow-hidden shadow-2xl relative">
-        <header className="px-6 py-4 border-b border-white/[0.06] bg-[#0B0F17]/80 flex items-center justify-between">
-          <div>
-            <h2 className="text-[11px] font-black text-[#E6EDF3] uppercase tracking-widest flex items-center gap-2">
-              <Radio className="text-[#00E5FF] animate-pulse" size={14} />
-              Incident Analysis feed
-            </h2>
-            <p className="text-[9px] font-bold text-[#9CA3AF] tracking-tighter opacity-40 uppercase">Intelligence Sorted</p>
-          </div>
-          <span className="text-[10px] font-black text-[#00E5FF] bg-[#00E5FF]/10 px-3 py-1 rounded-full border border-[#00E5FF]/25 shadow-inner">
-            {sortedIncidents.length} MISSIONS
-          </span>
+      {/* 1. LEFT PANEL: PRIORITY SCORING CARDS */}
+      <div className="flex flex-col h-full border-r border-[#E5E7EB] bg-[#FFFFFF] overflow-hidden">
+        <header className="px-8 py-7 border-b border-[#E5E7EB] flex flex-col gap-1">
+          <h2 className="text-[11px] font-bold text-[#111827] uppercase tracking-[0.3em]">Scoring Matrix Cards</h2>
+          <p className="text-[9px] font-medium text-[#6B7280] uppercase tracking-widest">Tactical Factor Breakdown</p>
         </header>
 
-        <div ref={listRefFeed} className="flex-1 p-4 space-y-[10px] overflow-hidden">
-          {sortedIncidents.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-20">
-               <Cpu className="animate-spin-slow mb-3" size={32} />
-               <p className="text-[10px] font-bold uppercase tracking-widest">Awaiting uplink...</p>
+        <div ref={listRefFeed} className="flex-1 p-6 space-y-6 overflow-y-auto scrollbar-hide pb-20 bg-[#F8FAFC]">
+          {allSortedIncidents.length === 0 ? (
+            <div className="h-64 flex flex-col items-center justify-center opacity-40">
+               <Cpu className="animate-spin mb-4" size={32} />
+               <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">Awaiting Data Packet...</p>
             </div>
-          ) : sortedIncidents.map((incident, idx) => {
-            const severity = incident.severity_block?.severity || "ANALYZING";
-            const typeLower = (incident.disaster_type || "").toLowerCase();
-            
-            // Centralized Disaster Themes
-            const theme = typeLower.includes('fire') 
-              ? { prim: "#ff3b3b", glow: "rgba(255,59,59,0.35)", bg: "rgba(255,59,59,0.06)" }
-              : (typeLower.includes('collapse') || typeLower.includes('earthquake'))
-              ? { prim: "#ff9a2f", glow: "rgba(255,154,47,0.35)", bg: "rgba(255,154,47,0.06)" }
-              : { prim: "#00d4ff", glow: "rgba(0,212,255,0.35)", bg: "rgba(0,212,255,0.06)" };
+          ) : allSortedIncidents.map((incident) => {
+            const theme = DISASTER_THEMES[incident.disaster_type] || DISASTER_THEMES.default;
+            const reasoning = priorityReasoning[incident.id];
+            const severity = incident.severity_block?.severity || "PENDING";
 
             return (
               <div
                 key={incident.id}
                 onClick={onNavigate}
-                style={{
-                  boxShadow: `0 0 40px -20px ${theme.glow}`,
-                }}
-                className={`flex items-center gap-4 h-[105px] p-4 rounded-3xl cursor-pointer transition-all duration-500 relative group border bg-[#0F1623]/80 border-white/[0.06] hover:bg-[#0F1623]`}
+                style={{ backgroundColor: theme.tint, borderColor: `${theme.color}20` }}
+                className="p-6 border rounded-[24px] cursor-pointer transition-all hover:scale-[1.02] soft-shadow"
               >
-                {/* Visual Left Border Accent */}
-                <div 
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-12 rounded-r-full opacity-60 transition-opacity group-hover:opacity-100" 
-                  style={{ backgroundColor: theme.prim, boxShadow: `0 0 10px ${theme.glow}` }} 
-                />
-
-                {/* Ranking Badge (#1 #2 #3) */}
-                <div 
-                  className={`absolute top-2 left-2 z-20 px-3 py-0.5 rounded-full text-[9px] font-black italic border transition-all duration-500 group-hover:scale-110`}
-                  style={{ 
-                    color: theme.prim, 
-                    borderColor: theme.prim, 
-                    backgroundColor: theme.bg,
-                    boxShadow: `0 0 12px ${theme.glow}`
-                  }}
-                >
-                  #{idx + 1}
-                </div>
-
-                <div className="w-14 h-14 flex-shrink-0 bg-black rounded-2xl overflow-hidden border border-white/[0.06] relative">
-                  <img src={incident.image_url} className="w-full h-full object-cover grayscale-[0.8] group-hover:grayscale-0 opacity-40 group-hover:opacity-100 transition-all duration-1000" alt="th" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
-                </div>
-                
-                <div className="flex-1 min-w-0 flex flex-col h-full py-0.5 relative">
-                  <div className="flex justify-between items-center mb-1">
-                    <h3 
-                      className="text-[15px] font-black capitalize truncate leading-none tracking-tight transition-all duration-500"
-                      style={{ 
-                        color: theme.prim,
-                        textShadow: `0 0 8px ${theme.glow}` 
-                      }}
-                    >
-                      {incident.disaster_type === 'building_collapse' ? 'Collapse Disaster' : (incident.disaster_type || "Detecting...").replace('_', ' ')}
-                    </h3>
-                    <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter shadow-sm border ${getSeverityColor(severity)}`}>
-                      {severity}
-                    </span>
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h4 className="text-[13px] font-black text-[#111827] uppercase tracking-tight flex items-center gap-2">
+                      <span className="text-lg">{theme.icon}</span> {theme.label}
+                    </h4>
+                    <p className="text-[9px] font-bold text-[#6B7280] uppercase tracking-[0.2em]">{incident.zone || "Identifying sector"}</p>
                   </div>
-                  
-                  <p className="text-[10px] font-bold flex items-center gap-1.5 mb-1.5 text-[#9CA3AF]">
-                    <span className="opacity-60 text-[12px]">📍</span> {incident.zone || "Resolving Zone..."}
-                  </p>
-                  
-                  <p className="text-[11px] text-gray-400 font-medium line-clamp-1 italic tracking-tight opacity-40 group-hover:opacity-80 transition-opacity mb-2 leading-none">
-                     {incident.description || "Agent computing telemetry context..."}
-                  </p>
-                  
-                  <div className="flex items-center justify-between gap-3">
-                     <div className="flex-1 rounded-full overflow-hidden border border-white/[0.06] bg-black/50 h-1 relative">
-                        <div 
-                           className="h-full transition-all duration-1000" 
-                           style={{ 
-                              width: `${(incident.confidence || 0.85) * 100}%`,
-                              backgroundColor: theme.prim,
-                              boxShadow: `0 0 10px ${theme.glow}`
-                           }} 
-                        />
-                     </div>
-                     <span className="text-[9px] font-black opacity-30 group-hover:opacity-100 transition-opacity" style={{ color: theme.prim }}>
-                        {Math.round((incident.confidence || 0.85) * 100)}%
-                     </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. MIDDLE PANEL: PRIORITY ENGINE (28%) */}
-      <div className="w-[28%] flex flex-col h-full bg-[#0B0F17]/40 rounded-2xl border border-white/[0.06] overflow-hidden">
-        <header className="px-5 py-4 border-b border-white/[0.06] bg-[#0B0F17]/95">
-          <h2 className="text-[11px] font-black text-[#E6EDF3] uppercase tracking-widest flex items-center gap-2">
-            <Zap className="text-[#00E5FF]" size={14} />
-            AI Priority Algorithm
-          </h2>
-        </header>
-
-        <div ref={listRefPriority} className="flex-1 p-4 space-y-[10px] overflow-hidden">
-          {sortedIncidents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full opacity-20">
-               <div className="w-6 h-6 border-2 border-white/5 border-t-[#00E0FF] rounded-full animate-spin" />
-            </div>
-          ) : sortedIncidents.map((incident, idx) => {
-            const severity = incident.severity_block?.severity || "ANALYZING";
-            const typeLower = (incident.disaster_type || "").toLowerCase();
-            const theme = typeLower.includes('fire') 
-              ? { prim: "#ff3b3b", glow: "rgba(255,59,59,0.35)", bg: "rgba(255,59,59,0.06)" }
-              : (typeLower.includes('collapse') || typeLower.includes('earthquake'))
-              ? { prim: "#ff9a2f", glow: "rgba(255,154,47,0.35)", bg: "rgba(255,154,47,0.06)" }
-              : { prim: "#00d4ff", glow: "rgba(0,212,255,0.35)", bg: "rgba(0,212,255,0.06)" };
-
-            return (
-              <div
-                key={incident.id}
-                className="flex items-center justify-between h-[82px] p-4 rounded-3xl bg-[#0F1623]/40 border border-white/[0.06] transition-all duration-300 hover:bg-[#0F1623]/60 group relative overflow-hidden"
-                style={{ boxShadow: `0 0 20px -10px ${theme.glow}` }}
-              >
-                <div className="flex items-center gap-4 min-w-0 relative z-10">
-                  <div 
-                    className="text-2xl font-black italic transition-all duration-500"
-                    style={{ 
-                      color: theme.prim,
-                      textShadow: `0 0 10px ${theme.glow}`,
-                      opacity: 0.4
-                    }}
+                  <span 
+                    className="text-[8px] font-black text-white px-2.5 py-1 rounded-full uppercase tracking-widest"
+                    style={{ backgroundColor: theme.color }}
                   >
-                    #{idx + 1}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-black capitalize truncate mb-1.5 tracking-tight text-[#E6EDF3] group-hover:text-white transition-colors">
-                      {incident.disaster_type || "Analysing..."}
-                    </h3>
-                    <span className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase border leading-none block w-fit ${getSeverityColor(severity)}`}>
-                      {severity}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="text-right relative z-10">
-                  <p className="text-[17px] font-black leading-none group-hover:scale-110 transition-transform" style={{ color: theme.prim }}>
-                    {incident.severity_block?.priority_score || '--'}
-                  </p>
-                  <p className="text-[7px] font-bold text-[#9CA3AF] uppercase mt-1 tracking-tighter opacity-40">P-SCORE</p>
+                    {severity}
+                  </span>
                 </div>
 
-                {/* Subtle Background Glow */}
-                <div className="absolute right-0 bottom-0 w-16 h-16 blur-2xl opacity-10 transition-opacity group-hover:opacity-20 pointer-events-none" style={{ backgroundColor: theme.prim }} />
+                {reasoning && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      {reasoning.factors?.map((f, i) => (
+                        <div key={i} className="space-y-1">
+                          <div className="flex justify-between text-[8px] font-bold uppercase tracking-widest text-[#6B7280]">
+                            <span>{f.name.replace('_', ' ')}</span>
+                            <span className="text-[#111827]">{f.score}/30</span>
+                          </div>
+                          <div className="h-0.5 w-full bg-[#111827]/5 rounded-full overflow-hidden">
+                             <div 
+                               className="h-full transition-all duration-1000" 
+                               style={{ width: `${(f.score/30)*100}%`, backgroundColor: theme.color }} 
+                             />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-4 border-t border-[#111827]/10 flex justify-between items-end">
+                       <div>
+                          <p className="text-[8px] font-bold text-[#6B7280] uppercase tracking-widest mb-1">Priority Index</p>
+                          <p className="text-2xl font-black text-[#111827] leading-none">{reasoning.total}</p>
+                       </div>
+                       <div className="text-right">
+                          <p className="text-[8px] font-bold text-[#6B7280] uppercase tracking-widest mb-1">AI Confidence</p>
+                          <p className="text-[13px] font-bold text-[#111827]">{Math.round((incident.confidence || 0.95) * 100)}%</p>
+                       </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* 3. RIGHT PANEL: AGENT STATUS + TERMINAL (30%) */}
-      <div className="w-[30%] flex flex-col h-full bg-[#05070B] rounded-2xl border border-white/[0.06] overflow-hidden shadow-2xl">
-        <div className="p-5 bg-[#0B0F17]/95 border-b border-white/[0.06]">
-          <header className="flex items-center justify-between mb-4">
-            <h2 className="text-[10px] font-black text-[#00E5FF] uppercase tracking-[0.3em] flex items-center gap-2">
-              <Target size={12} />
-              Mission Status Panel
-            </h2>
-            <div className="h-1.5 w-1.5 rounded-full bg-[#22C55E] animate-pulse shadow-[0_0_5px_#22C55E]" />
-          </header>
-          
-          <div className="space-y-2">
-            <AgentRow name="Triage Agent" status="ACTIVE" active={true} />
-            <AgentRow name="Priority Engine" status="OPTIMIZING" active={true} />
-            <AgentRow name="Resource Estimator" status="READY" active={true} />
-          </div>
-        </div>
+      {/* 2. CENTER PANEL: PRIORITY RANKING LIST */}
+      <div className="flex flex-col h-full bg-[#FFFFFF] overflow-hidden">
+         <header className="px-10 py-7 border-b border-[#E5E7EB] flex flex-col gap-1">
+            <h2 className="text-[11px] font-black text-[#111827] uppercase tracking-[0.4em]">Priority Dashboard</h2>
+            <p className="text-[9px] font-bold text-[#6B7280] uppercase tracking-[0.15em]">AI Multi-Disaster Prioritization Engine</p>
+         </header>
 
-        <div className="flex-1 flex flex-col min-h-0 bg-black/40 relative">
-           <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-[#05070B] to-transparent z-10 pointer-events-none" />
-           <div className="flex-1 overflow-hidden px-1">
-              <TerminalLogViewer />
-           </div>
-        </div>
+         <div className="flex-1 p-10 overflow-y-auto scrollbar-hide space-y-10">
+            <div className="space-y-4">
+               {allSortedIncidents.map((inc, i) => {
+                 const theme = DISASTER_THEMES[inc.disaster_type] || DISASTER_THEMES.default;
+                 const score = priorityReasoning[inc.id]?.total || Math.round((inc.severity_block?.priority_score || 0));
+                 const severity = inc.severity_block?.severity || "PENDING";
+
+                 return (
+                   <div 
+                     key={inc.id} 
+                     className="relative p-6 bg-white border border-[#E5E7EB] rounded-[24px] hover:border-[#111827]/10 hover:shadow-xl transition-all cursor-pointer group flex items-center justify-between"
+                     style={{ borderLeft: `6px solid ${theme.color}` }}
+                   >
+                      <div className="flex items-center gap-6">
+                         <span className="text-2xl font-black text-[#E5E7EB] group-hover:text-[#111827] transition-colors">#{i+1}</span>
+                         <div className="text-3xl">{theme.icon}</div>
+                         <div>
+                            <p className="text-[14px] font-black text-[#111827] uppercase tracking-tight mb-0.5">{theme.label}</p>
+                            <p className="text-[10px] text-[#6B7280] uppercase tracking-widest font-bold">{inc.zone || "Analyzing Sector"}</p>
+                         </div>
+                      </div>
+
+                      <div className="flex items-center gap-10">
+                         <div className="w-48 space-y-2">
+                            <div className="flex justify-between text-[9px] font-bold uppercase tracking-widest text-[#6B7280]">
+                               <span>Impact Magnitude</span>
+                               <span className="text-[#111827]">{score}%</span>
+                            </div>
+                            <div className="h-2 w-full bg-[#F8FAFC] rounded-full overflow-hidden border border-[#E5E7EB]">
+                               <div 
+                                 className="h-full transition-all duration-1000" 
+                                 style={{ width: `${score}%`, backgroundColor: theme.color }} 
+                               />
+                            </div>
+                         </div>
+                         <div className="text-center min-w-[80px]">
+                            <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${severity === 'CRITICAL' ? 'text-[#EF4444] bg-[#FEF2F2]' : severity === 'HIGH' ? 'text-[#F59E0B] bg-[#FFFBEB]' : 'text-[#22C55E] bg-[#F0FDF4]'}`}>
+                               {severity === 'CRITICAL' ? 'HIGH PRIORITY' : severity === 'HIGH' ? 'MEDIUM PRIORITY' : 'LOW PRIORITY'}
+                            </span>
+                         </div>
+                      </div>
+                   </div>
+                 );
+               })}
+            </div>
+
+            {/* AI MISSION SUMMARY */}
+            <div className="pt-10 border-t border-[#E5E7EB] space-y-6">
+               <h3 className="text-[10px] font-black text-[#6B7280] uppercase tracking-[0.3em]">AI Tactical Summary</h3>
+               <div className="p-10 bg-[#F8FAFC] border border-[#E5E7EB] rounded-[40px] relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-8 opacity-5">
+                     <Cpu size={120} />
+                  </div>
+                  <p className="text-[18px] text-[#111827] leading-relaxed font-bold italic relative z-10">
+                    "{allSortedIncidents[0]?.description || "Awaiting multi-vector mission synchronization..."}"
+                  </p>
+               </div>
+            </div>
+         </div>
       </div>
 
-      <style>{`
-        @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .animate-spin-slow { animation: spin-slow 12s linear infinite; }
-      `}</style>
+      {/* 3. RIGHT PANEL: RESOURCE STATUS */}
+      <div className="flex flex-col h-full border-l border-[#E5E7EB] bg-[#FFFFFF] overflow-hidden">
+         <header className="px-8 py-7 border-b border-[#E5E7EB] flex items-center justify-between">
+            <h2 className="text-[11px] font-bold text-[#111827] uppercase tracking-[0.3em]">Neural Status</h2>
+         </header>
+
+         <div className="flex-1 p-8 space-y-8 overflow-y-auto scrollbar-hide">
+            <div className="space-y-4">
+               <h4 className="text-[10px] font-bold text-[#6B7280] uppercase tracking-widest px-1">Active Reasoning Agents</h4>
+               <AgentRow name="Triage Engine" status="Evaluating" color="#EF4444" />
+               <AgentRow name="Resource Weaver" status="Idle" color="#6B7280" />
+               <AgentRow name="Vector Sync" status="Standby" color="#3B82F6" />
+            </div>
+
+            <div className="space-y-4 pt-10 border-t border-[#E5E7EB]">
+               <h4 className="text-[10px] font-bold text-[#6B7280] uppercase tracking-widest px-1">Tactical Stream</h4>
+               <div className="rounded-3xl border border-[#E5E7EB] overflow-hidden bg-white p-1">
+                 <TerminalLogViewer />
+               </div>
+            </div>
+         </div>
+      </div>
     </div>
   );
 };
 
-const AgentRow = ({ name, status, active }) => (
-  <div className="flex items-center justify-between px-4 py-2 bg-[#0F1623]/60 rounded-2xl border border-white/[0.06] group hover:border-[#00E5FF]/20 transition-all shadow-inner">
-     <div className="flex items-center gap-3">
-        <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-[#00E5FF] shadow-[0_0_10px_#00E5FF]' : 'bg-gray-700'} ${active && 'animate-pulse'}`} />
-        <span className="text-[10px] font-black text-[#E6EDF3] tracking-widest uppercase">{name}</span>
+const AgentRow = ({ name, status, color }) => (
+  <div className="flex items-center justify-between px-5 py-4 bg-[#F8FAFC] border border-[#E5E7EB] rounded-2xl hover:bg-white transition-all shadow-sm">
+     <div className="flex items-center gap-4">
+        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+        <span className="text-[11px] font-black text-[#111827] uppercase tracking-widest">{name}</span>
      </div>
-     <span className={`text-[9px] font-black tracking-[0.2em] ${active ? 'text-[#00E5FF]' : 'text-gray-500'}`}>{status}</span>
+     <span className="text-[9px] font-bold text-[#6B7280] uppercase tracking-widest">{status}</span>
   </div>
 );

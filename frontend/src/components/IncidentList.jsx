@@ -22,138 +22,76 @@ export const IncidentList = () => {
   if (incidentArray.length === 0) return null;
 
   return (
-    <div className="w-full max-w-5xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
-        <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 text-transparent bg-clip-text">Live Incident Feed</h2>
-        <span className="bg-red-500/20 text-red-500 text-xs font-bold px-3 py-1 rounded-full animate-pulse flex items-center">
-          <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
-          LIVE UPDATES
+    <div className="w-full max-w-5xl mx-auto p-8 space-y-8 bg-[#050505]">
+      <div className="flex items-center justify-between mb-8 border-b border-[#1A1A1A] pb-4">
+        <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Mission History Archive</h2>
+        <span className="bg-[#FF2D2D]/10 text-[#FF2D2D] text-[10px] font-black px-4 py-1.5 rounded-full border border-[#FF2D2D]/20 animate-pulse flex items-center tracking-widest uppercase">
+          <span className="w-1.5 h-1.5 bg-[#FF2D2D] rounded-full mr-2 shadow-[0_0_8px_#FF2D2D]"></span>
+          Active Feed
         </span>
       </div>
       
       <div className="space-y-6">
         {incidentArray.map((incident) => (
-          <div key={incident.id} className="bg-gray-800/80 backdrop-blur-md border border-gray-700/80 rounded-2xl p-6 shadow-2xl flex flex-col md:flex-row gap-6 transition hover:border-gray-600">
+          <div key={incident.id} className="bg-[#0B0B0B] border border-[#1A1A1A] rounded-2xl p-8 flex flex-col md:flex-row gap-8 transition hover:border-[#FF2D2D]/20 group">
             
-            <div className="w-full md:w-1/3 flex-shrink-0">
-              {incident.image_url?.startsWith("data:image") ? (
-                <img src={incident.image_url} alt="Disaster" className="w-full h-auto max-h-56 object-cover rounded-xl border border-gray-700" />
+            <div className="w-full md:w-1/4 flex-shrink-0">
+              {incident.image_url ? (
+                <img src={incident.image_url} alt="Disaster" className="w-full h-auto aspect-square object-cover rounded-xl border border-[#1A1A1A] grayscale group-hover:grayscale-0 transition-all duration-700" />
               ) : (
-                <div className="w-full h-48 bg-gray-900 rounded-xl flex items-center justify-center border border-gray-700 text-gray-500 text-sm">
-                  Placeholder Image
+                <div className="w-full h-48 bg-black rounded-xl flex items-center justify-center border border-[#1A1A1A] text-zinc-800 text-[10px] font-black uppercase">
+                  No Imagery
                 </div>
               )}
             </div>
             
-            <div className="flex-1 space-y-4">
+            <div className="flex-1 space-y-6">
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-2xl font-extrabold text-white capitalize">{incident.disaster_type}</h3>
-                  <p className="text-gray-400 text-sm mt-1">{incident.zone} • {incident.coordinates?.lat}, {incident.coordinates?.lng}</p>
+                  <h3 className="text-xl font-black text-white uppercase tracking-tight mb-1">{incident.disaster_type?.replace('_', ' ')}</h3>
+                  <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">{incident.zone || "Location Coordinating"}</p>
                 </div>
                 {incident.severity_block ? (
-                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg ${
-                    incident.severity_block.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-400 border border-red-500/50' :
-                    incident.severity_block.severity === 'HIGH' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50' :
-                    incident.severity_block.severity === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50' :
-                    'bg-green-500/20 text-green-400 border border-green-500/50'
+                  <span className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${
+                    incident.severity_block.severity === 'CRITICAL' ? 'bg-[#FF2D2D] text-white border-[#FF2D2D]' :
+                    'bg-black text-[#FF2D2D] border-[#FF2D2D]/30'
                   }`}>
-                    {incident.severity_block.severity} ({incident.severity_block.priority_score})
+                    {incident.severity_block.severity}
                   </span>
                 ) : (
-                  <span className="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest bg-gray-700/50 text-gray-400 border border-gray-600">
-                    Analyzing...
+                  <span className="px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest bg-black text-zinc-700 border border-[#1A1A1A]">
+                    Syncing...
                   </span>
                 )}
               </div>
 
-              <p className="text-gray-300 text-sm leading-relaxed border-l-2 border-gray-600 pl-3">
-                {incident.description || (incident.status === 'pending' ? "Agent 1 processing image context..." : "")}
+              <p className="text-zinc-500 text-xs leading-relaxed italic border-l-2 border-[#1A1A1A] pl-4 font-medium capitalize">
+                {incident.description || "Synthesizing mission intelligence parameters..."}
               </p>
 
               {incident.dispatch_plan ? (
-                <div className="mt-4 p-5 bg-gradient-to-br from-gray-900/80 to-gray-800/50 rounded-xl border border-blue-500/30 shadow-inner space-y-4">
-                  <div className="flex items-center font-bold text-white text-lg border-b border-gray-700/50 pb-2">
-                    <span className="mr-3 text-xl">🚑</span> 
-                    Dispatch Status: <span className="ml-2 text-blue-400 uppercase tracking-wide text-sm bg-blue-500/10 px-2 py-0.5 rounded">{incident.dispatch_plan.status}</span>
-                  </div>
+                <div className="p-6 bg-black border border-[#1A1A1A] rounded-xl space-y-4">
+                  <header className="flex items-center justify-between border-b border-[#1A1A1A] pb-3 mb-4">
+                     <p className="text-[10px] font-black text-white uppercase tracking-widest">Resource Allocation</p>
+                     <span className="text-[9px] font-black text-[#FF2D2D] uppercase tracking-[0.2em]">{incident.dispatch_plan.status}</span>
+                  </header>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-sm">
-                    <div className="flex items-start">
-                      <span className="mr-3 text-lg">👨‍🚒</span>
-                      <div>
-                        <span className="text-gray-400 block text-[10px] font-bold uppercase tracking-widest mb-1">Teams assigned</span>
-                        <span className="text-gray-100 font-medium">{incident.dispatch_plan.teams?.join(", ") || "None"}</span>
-                      </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                       <span className="text-[#1A1A1A] block text-[8px] font-black uppercase tracking-widest mb-1">Assigned Forces</span>
+                       <span className="text-zinc-400 font-black text-[10px] uppercase">{incident.dispatch_plan.teams?.join(", ") || "None"}</span>
                     </div>
-                    
-                    <div className="flex items-start">
-                      <span className="mr-3 text-lg">🚒</span>
-                      <div>
-                        <span className="text-gray-400 block text-[10px] font-bold uppercase tracking-widest mb-1">Vehicles assigned</span>
-                        <span className="text-gray-100 font-medium">{incident.dispatch_plan.vehicles?.join(", ") || "None"}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start sm:col-span-2">
-                      <span className="mr-3 text-lg">⏱</span>
-                      <div>
-                        <span className="text-gray-400 block text-[10px] font-bold uppercase tracking-widest mb-1">ETA</span>
-                        <span className="font-extrabold text-orange-400 text-base">{incident.dispatch_plan.eta_minutes} minutes</span>
-                      </div>
+                    <div className="text-right">
+                       <span className="text-[#1A1A1A] block text-[8px] font-black uppercase tracking-widest mb-1">Time to Target</span>
+                       <span className="text-white font-black text-sm italic tracking-tighter">{incident.dispatch_plan.eta_minutes} MIN</span>
                     </div>
                   </div>
                 </div>
               ) : (
-                 <div className="mt-4 p-4 bg-gray-900/30 rounded-xl border border-gray-700 text-gray-500 text-sm font-medium flex items-center">
-                    <span className="animate-pulse mr-2 w-2 h-2 bg-yellow-500 rounded-full"></span>
-                    Waiting for Resource Dispatch Agent...
+                 <div className="p-4 bg-black/40 rounded-xl border border-[#1A1A1A] text-zinc-800 text-[10px] font-black uppercase tracking-widest flex items-center justify-center italic">
+                    <span className="animate-pulse mr-3 w-1.5 h-1.5 bg-[#FF2D2D] rounded-full"></span>
+                    Synchronizing Analysis Agents...
                  </div>
-              )}
-
-              {incident.resource_tracking && (
-                <div className="mt-4 p-5 bg-gradient-to-br from-gray-900/80 to-gray-800/50 rounded-xl border border-green-500/30 shadow-inner">
-                  {incident.resource_tracking.status === 'arrived' ? (
-                    <div className="flex flex-col space-y-2">
-                       <div className="flex items-center font-bold text-green-400 text-lg border-b border-gray-700/50 pb-2">
-                         <span className="mr-3 text-xl">✅</span> Resources Arrived
-                       </div>
-                       <div className="text-sm mt-2">
-                         <span className="text-gray-400 font-bold uppercase tracking-widest text-[10px] block mb-1">Status</span>
-                         <span className="text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded">arrived</span>
-                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col space-y-3">
-                       <div className="flex items-center font-bold text-white text-lg border-b border-gray-700/50 pb-2">
-                         <span className="mr-3 text-xl">🚑</span> Resource Movement
-                       </div>
-                       <div className="grid grid-cols-2 gap-4 text-sm mt-2">
-                         <div>
-                            <span className="text-gray-400 block text-[10px] font-bold uppercase tracking-widest mb-1">Status</span>
-                            <span className="text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded uppercase text-xs tracking-wide">{incident.resource_tracking.status}</span>
-                         </div>
-                         <div>
-                            <span className="text-gray-400 block text-[10px] font-bold uppercase tracking-widest mb-1">ETA Remaining</span>
-                            <span className="font-extrabold text-orange-400 text-base">{incident.resource_tracking.eta_remaining} minutes</span>
-                         </div>
-                         <div className="col-span-2">
-                            <span className="text-gray-400 block text-[10px] font-bold uppercase tracking-widest mb-1">Updating Location</span>
-                            <span className="text-gray-200 font-mono text-xs bg-gray-800 px-2 py-1 rounded">
-                              {incident.resource_tracking.current_location.lat}, {incident.resource_tracking.current_location.lng}
-                            </span>
-                         </div>
-                       </div>
-                       
-                       <div className="mt-3 w-full bg-gray-700 rounded-full h-3 overflow-hidden shadow-inner">
-                          <div className="bg-gradient-to-r from-blue-500 to-green-400 h-3 rounded-full transition-all duration-1000 ease-linear shadow-lg" style={{ width: `${incident.resource_tracking.progress}%` }}></div>
-                       </div>
-                       <div className="text-right text-[10px] font-extrabold text-blue-400 uppercase tracking-widest">
-                         Progress: {incident.resource_tracking.progress}%
-                       </div>
-                    </div>
-                  )}
-                </div>
               )}
             </div>
           </div>

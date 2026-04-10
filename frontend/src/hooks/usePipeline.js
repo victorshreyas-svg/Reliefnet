@@ -20,6 +20,7 @@ export const usePipeline = () => {
         type: "flood",
         zone: "Mahadevapura, Bangalore",
         coordinates: { lat: 12.9916, lng: 77.6950 },
+        priority_score: 92,
         description:
           "Waterlogging across residential roads. Vehicles stuck. Limited movement."
       };
@@ -29,6 +30,7 @@ export const usePipeline = () => {
         type: "building_collapse",
         zone: "Babusapalya, Bangalore",
         coordinates: { lat: 13.0250, lng: 77.6632 },
+        priority_score: 95,
         description:
           "Multi-floor building collapse. People trapped under debris."
       };
@@ -38,6 +40,7 @@ export const usePipeline = () => {
         type: "fire",
         zone: "Shivani Layout, Bangalore",
         coordinates: { lat: 13.0400, lng: 77.6200 },
+        priority_score: 98,
         description:
           "Construction site fire spreading to nearby buildings."
       };
@@ -199,11 +202,12 @@ export const usePipeline = () => {
       const severity = a2Result.severity || "MEDIUM";
       const severityBlock = {
         severity: severity,
-        priority_score:
+        priority_score: case1Data?.priority_score || (
           severity === "CRITICAL" ? 95 :
             severity === "HIGH" ? 80 :
               severity === "MEDIUM" ? 60 :
-                40,
+                40
+        ),
         urgency: a2Result.urgency,
         people_at_risk: a2Result.people_at_risk
       };
@@ -236,9 +240,11 @@ export const usePipeline = () => {
       // 4. Agent 4 handles tracking via asynchronous loop mapping realtime
       logger.emit("[Dispatch Agent] Sending dispatch request");
       logger.emit("[Dispatch Agent] Units notified");
+      logger.emit("[Dispatch Agent] Sending dispatch request");
+      logger.emit("[Dispatch Agent] Units notified");
       startAgent4(tryUpdateDB, a1Result.coordinates, severity, a3Result.eta_minutes);
       logger.emit("[Dispatch Agent] Dispatch confirmed");
-
+ 
       logger.emit(`Pipeline sync complete for incident: ${incidentId}`);
       return incidentId;
     } catch (e) {
