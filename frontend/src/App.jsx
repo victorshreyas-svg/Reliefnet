@@ -20,7 +20,7 @@ function App() {
   const location = useLocation();
   
   // Initialize from persistence
-  const [items, setItems] = useState(() => persistence.load(STORAGE_KEYS.INCIDENTS, []));
+  const [items, setItems] = useState([]);
   const [isSimulating, setIsSimulating] = useState(false);
   const [sessionRestored, setSessionRestored] = useState(false);
 
@@ -30,7 +30,9 @@ function App() {
   }, [items]);
 
   // Session Restore Indicator
+  // Session Management: Start Fresh on Every Run
   React.useEffect(() => {
+    persistence.clear();
     if (items.length > 0) {
       setSessionRestored(true);
       const timer = setTimeout(() => setSessionRestored(false), 3000);

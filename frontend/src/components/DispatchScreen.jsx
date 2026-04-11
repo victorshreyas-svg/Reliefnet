@@ -29,11 +29,11 @@ export const DispatchScreen = () => {
   const [resources, setResources] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isAllocating, setIsAllocating] = useState(false);
-  const [selectedResources, setSelectedResources] = useState(() => persistence.load(STORAGE_KEYS.ALLOCATION, []));
-  const [aiRequirements, setAiRequirements] = useState(() => persistence.load(STORAGE_KEYS.DISPATCH, null));
-  const [simulationLogs, setSimulationLogs] = useState(() => persistence.load(STORAGE_KEYS.DISPATCH_LOGS, []));
+  const [selectedResources, setSelectedResources] = useState([]);
+  const [aiRequirements, setAiRequirements] = useState(null);
+  const [simulationLogs, setSimulationLogs] = useState([]);
   
-  const [systemPhase, setSystemPhase] = useState(() => persistence.load('reliefnet_phase', "ANALYZING"));
+  const [systemPhase, setSystemPhase] = useState("ANALYZING");
   const [currentDispatchIdx, setCurrentDispatchIdx] = useState(-1);
 
   // Persistence Save Effect
@@ -258,6 +258,7 @@ export const DispatchScreen = () => {
                            <div>
                               <p className="text-[13px] font-black text-[#111827] uppercase tracking-tight">{res.name}</p>
                               <p className="text-[9px] font-bold text-[#6B7280] uppercase tracking-widest text-opacity-50 opacity-50">STATUS: NETWORK ACTIVE</p>
+                              <p className="text-[10px] font-black text-[#6B7280] uppercase tracking-widest mt-1">Distance: {Number(res.distance).toFixed(1)} KM</p>
                            </div>
                         </div>
                         <div className="flex items-center gap-2">

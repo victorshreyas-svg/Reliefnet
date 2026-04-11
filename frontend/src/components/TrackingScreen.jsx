@@ -57,10 +57,7 @@ export const TrackingScreen = () => {
   
   const [incident] = useState(state?.incident);
   const [baseResources] = useState(state?.resources || []);
-  const [enrichedResources, setEnrichedResources] = useState(() => {
-    const saved = persistence.load(STORAGE_KEYS.TRACKING, null);
-    return saved?.enrichedResources || [];
-  });
+  const [enrichedResources, setEnrichedResources] = useState([]);
   const [isRanking, setIsRanking] = useState(false);
   const [loading, setLoading] = useState(!enrichedResources.length);
   const [simulationTime, setSimulationTime] = useState(0);
@@ -134,7 +131,7 @@ export const TrackingScreen = () => {
         if (allDone && !allArrived) {
           setAllArrived(true);
           setShowBanner(true);
-          setTimeout(() => setShowBanner(false), 3000);
+          setTimeout(() => setShowBanner(false), 5000);
         }
         
         return next;
@@ -262,15 +259,6 @@ export const TrackingScreen = () => {
                   <span className="text-[10px] font-black text-[#111827] uppercase tracking-widest whitespace-nowrap">Live Response Tracking • AI Telemetry Active</span>
                </div>
 
-               {showBanner && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[2000] pointer-events-none animate-banner-slide">
-                     <div className="bg-white/95 backdrop-blur-xl border border-[#22C55E]/50 p-12 rounded-[48px] shadow-2xl flex flex-col items-center gap-4 min-w-[450px] soft-shadow border-t-[8px]">
-                        <ShieldCheck size={48} className="text-[#22C55E] mb-2" />
-                        <h2 className="text-3xl font-black text-[#111827] tracking-[0.2em] uppercase">Sector Secured</h2>
-                        <p className="text-[11px] text-[#22C55E] font-black uppercase tracking-widest">Mission Critical Objectives Complete</p>
-                     </div>
-                  </div>
-               )}
             </div>
          </div>
 
@@ -323,6 +311,16 @@ export const TrackingScreen = () => {
             </div>
          </div>
       </div>
+
+      {showBanner && (
+         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] pointer-events-none animate-banner-slide">
+            <div className="bg-white/95 backdrop-blur-xl border border-[#22C55E]/50 p-12 rounded-[48px] shadow-2xl flex flex-col items-center gap-4 min-w-[450px] soft-shadow border-t-[8px]">
+               <ShieldCheck size={48} className="text-[#22C55E] mb-2" />
+               <h2 className="text-3xl font-black text-[#111827] tracking-[0.2em] uppercase">Sector Secured</h2>
+               <p className="text-[11px] text-[#22C55E] font-black uppercase tracking-widest">Mission Critical Objectives Complete</p>
+            </div>
+         </div>
+      )}
 
       <style>{`
         .leaflet-container { background: #FFFFFF !important; }

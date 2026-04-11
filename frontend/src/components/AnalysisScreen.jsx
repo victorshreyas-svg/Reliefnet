@@ -27,7 +27,7 @@ import { persistence, STORAGE_KEYS } from "../services/persistence";
 
 export const AnalysisScreen = ({ onNavigate }) => {
   const [incidents, setIncidents] = useState({});
-  const [priorityReasoning, setPriorityReasoning] = useState(() => persistence.load(STORAGE_KEYS.ANALYSIS, {}));
+  const [priorityReasoning, setPriorityReasoning] = useState({});
   const listRefFeed = useRef(null);
 
   // Persistence Save Effect
